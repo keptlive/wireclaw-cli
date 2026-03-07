@@ -28,11 +28,13 @@ import {
   getAllRegisteredGroups,
   getAllSessions,
   getAllTasks,
+  getManifestHash,
   getMessagesSince,
   getNewMessages,
   getRegisteredGroup,
   getRouterState,
   initDatabase,
+  setManifestHash,
   setRegisteredGroup,
   setRouterState,
   setSession,
@@ -43,6 +45,7 @@ import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
+import { applyManifest, discoverManifests, loadManifest } from './manifest.js';
 import {
   isSenderAllowed,
   isTriggerAllowed,
@@ -467,6 +470,31 @@ async function main(): Promise<void> {
   initDatabase();
   logger.info('Database initialized');
   loadState();
+
+  // Auto-apply YAML manifests on startup
+  if (process.env.AUTO_APPLY_MANIFESTS === 'true') {
+    const manifestFiles = discoverManifests();
+    if (manifestFiles.length > 0) {
+      logger.info({ count: manifestFiles.length }, 'Auto-applying manifests');
+      for (const file of manifestFiles) {
+        try {
+          const result = await applyManifest(file, {
+            registerGroup,
+            getManifestHash,
+            setManifestHash,
+            getRegisteredGroup,
+          });
+          if (result.status === 'created' || result.status === 'updated') {
+            // Reload registeredGroups from DB after apply
+            registeredGroups = getAllRegisteredGroups();
+          }
+          logger.info({ file, ...result }, 'Manifest apply result');
+        } catch (err) {
+          logger.warn({ file, err }, 'Failed to apply manifest');
+        }
+      }
+    }
+  }
 
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {

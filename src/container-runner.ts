@@ -39,6 +39,8 @@ export interface ContainerInput {
   isScheduledTask?: boolean;
   assistantName?: string;
   secrets?: Record<string, string>;
+  mcpServers?: Record<string, import('./types.js').McpServerConfig>;
+  systemPackages?: string[];
 }
 
 export interface ContainerOutput {
@@ -210,20 +212,29 @@ function buildVolumeMounts(
   return mounts;
 }
 
+// Env vars always passed to containers regardless of scoping
+const ALWAYS_REQUIRED_ENV_VARS = [
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_AUTH_TOKEN',
+  'CLAUDE_MODEL',
+  'AGENTWIRE_API_KEY',
+  'AGENTWIRE_URL',
+];
+
 /**
  * Read allowed secrets from .env for passing to the container via stdin.
  * Secrets are never written to disk or mounted as files.
+ * If group has envVars configured, only those + always-required vars are passed.
  */
 function readSecrets(group: RegisteredGroup): Record<string, string> {
-  const secrets = readEnvFile([
-    'CLAUDE_CODE_OAUTH_TOKEN',
-    'ANTHROPIC_API_KEY',
-    'ANTHROPIC_BASE_URL',
-    'ANTHROPIC_AUTH_TOKEN',
-    'CLAUDE_MODEL',
-    'AGENTWIRE_API_KEY',
-    'AGENTWIRE_URL',
-  ]);
+  const scopedVars = group.containerConfig?.envVars;
+  const keysToRead = scopedVars
+    ? [...new Set([...ALWAYS_REQUIRED_ENV_VARS, ...scopedVars])]
+    : ALWAYS_REQUIRED_ENV_VARS;
+
+  const secrets = readEnvFile(keysToRead);
 
   // Per-group AgentWire agent ID (auto-created on group registration)
   if (group.agentwireAgentId) {
@@ -326,6 +337,16 @@ export async function runContainerAgent(
 
     // Pass secrets via stdin (never written to disk or mounted as files)
     input.secrets = readSecrets(group);
+
+    // Pass custom MCP servers and system packages from container config
+    if (group.containerConfig?.mcpServers) {
+      input.mcpServers = group.containerConfig.mcpServers;
+    }
+    if (group.containerConfig?.envVars) {
+      // Also pass scoped env vars that aren't in the always-required set
+      // so the agent-runner can resolve $VAR references in MCP server env
+    }
+
     container.stdin.write(JSON.stringify(input));
     container.stdin.end();
     // Remove secrets from input so they don't appear in logs

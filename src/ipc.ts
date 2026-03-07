@@ -5,10 +5,11 @@ import { CronExpressionParser } from 'cron-parser';
 
 import { DATA_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
 import { AvailableGroup } from './container-runner.js';
-import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
+import { createTask, deleteTask, getManifestHash, getRegisteredGroup, getTaskById, setManifestHash, updateTask } from './db.js';
 import { readEnvFile } from './env.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
+import { applyManifest } from './manifest.js';
 import { RegisteredGroup } from './types.js';
 
 /**
@@ -205,6 +206,7 @@ export async function processTaskIpc(
     trigger?: string;
     requiresTrigger?: boolean;
     containerConfig?: RegisteredGroup['containerConfig'];
+    manifestPath?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -458,6 +460,24 @@ export async function processTaskIpc(
         );
         break;
       }
+
+      // Manifest-based registration path
+      if (data.manifestPath) {
+        try {
+          const result = await applyManifest(data.manifestPath, {
+            registerGroup: deps.registerGroup,
+            getManifestHash,
+            setManifestHash,
+            getRegisteredGroup,
+          });
+          logger.info({ manifestPath: data.manifestPath, ...result }, 'Manifest applied via IPC');
+        } catch (err) {
+          logger.warn({ manifestPath: data.manifestPath, err }, 'Failed to apply manifest via IPC');
+        }
+        break;
+      }
+
+      // Imperative registration path (unchanged)
       if (data.jid && data.name && data.folder && data.trigger) {
         if (!isValidGroupFolder(data.folder)) {
           logger.warn(

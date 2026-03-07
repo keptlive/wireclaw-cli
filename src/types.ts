@@ -27,9 +27,20 @@ export interface AllowedRoot {
   description?: string;
 }
 
+export interface McpServerConfig {
+  command?: string;
+  args?: string[];
+  type?: 'sse' | 'stdio';
+  url?: string;
+  headers?: Record<string, string>;
+  env?: Record<string, string>; // values like "$GITHUB_TOKEN" resolved at runtime
+}
+
 export interface ContainerConfig {
   additionalMounts?: AdditionalMount[];
   timeout?: number; // Default: 300000 (5 minutes)
+  mcpServers?: Record<string, McpServerConfig>;
+  envVars?: string[]; // Scoped env var names this group needs
 }
 
 export interface RegisteredGroup {

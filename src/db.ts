@@ -127,6 +127,11 @@ function createSchema(database: Database.Database): void {
     database.exec(`ALTER TABLE registered_groups ADD COLUMN model TEXT`);
   } catch { /* column already exists */ }
 
+  // Add manifest_hash for YAML manifest idempotency tracking
+  try {
+    database.exec(`ALTER TABLE registered_groups ADD COLUMN manifest_hash TEXT`);
+  } catch { /* column already exists */ }
+
   // Add channel and is_group columns if they don't exist (migration for existing DBs)
   try {
     database.exec(`ALTER TABLE chats ADD COLUMN channel TEXT`);
@@ -650,6 +655,21 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
     };
   }
   return result;
+}
+
+// --- Manifest hash accessors ---
+
+export function getManifestHash(jid: string): string | undefined {
+  const row = db
+    .prepare('SELECT manifest_hash FROM registered_groups WHERE jid = ?')
+    .get(jid) as { manifest_hash: string | null } | undefined;
+  return row?.manifest_hash || undefined;
+}
+
+export function setManifestHash(jid: string, hash: string): void {
+  db.prepare(
+    'UPDATE registered_groups SET manifest_hash = ? WHERE jid = ?',
+  ).run(hash, jid);
 }
 
 // --- JSON migration ---

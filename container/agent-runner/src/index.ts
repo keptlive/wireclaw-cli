@@ -19,6 +19,15 @@ import path from 'path';
 import { query, HookCallback, PreCompactHookInput, PreToolUseHookInput } from '@anthropic-ai/claude-agent-sdk';
 import { fileURLToPath } from 'url';
 
+interface McpServerConfig {
+  command?: string;
+  args?: string[];
+  type?: 'sse' | 'stdio';
+  url?: string;
+  headers?: Record<string, string>;
+  env?: Record<string, string>;
+}
+
 interface ContainerInput {
   prompt: string;
   sessionId?: string;
@@ -28,6 +37,8 @@ interface ContainerInput {
   isScheduledTask?: boolean;
   assistantName?: string;
   secrets?: Record<string, string>;
+  mcpServers?: Record<string, McpServerConfig>;
+  systemPackages?: string[];
 }
 
 interface ContainerOutput {
@@ -414,6 +425,24 @@ async function runQuery(
     log(`Additional directories: ${extraDirs.join(', ')}`);
   }
 
+  // Build custom MCP servers from manifest
+  const customMcp: Record<string, object> = {};
+  const customToolPatterns: string[] = [];
+  for (const [name, spec] of Object.entries(containerInput.mcpServers || {})) {
+    if (name === 'nanoclaw' || name === 'agentwire') continue; // reserved
+    if (spec.type === 'sse' && spec.url) {
+      customMcp[name] = { type: 'sse' as const, url: spec.url, headers: spec.headers };
+    } else if (spec.command) {
+      // Resolve $VAR references in env from sdkEnv
+      const resolvedEnv: Record<string, string> = {};
+      for (const [k, v] of Object.entries(spec.env || {})) {
+        resolvedEnv[k] = v.startsWith('$') ? (sdkEnv[v.slice(1)] || '') : v;
+      }
+      customMcp[name] = { command: spec.command, args: spec.args || [], env: resolvedEnv };
+    }
+    customToolPatterns.push(`mcp__${name}__*`);
+  }
+
   for await (const message of query({
     prompt: stream,
     options: {
@@ -433,7 +462,8 @@ async function runQuery(
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
         'mcp__nanoclaw__*',
-        'mcp__agentwire__*'
+        'mcp__agentwire__*',
+        ...customToolPatterns,
       ],
       env: sdkEnv,
       model: sdkEnv.CLAUDE_MODEL || undefined,
@@ -460,6 +490,8 @@ async function runQuery(
             },
           },
         } : {}),
+        // Custom MCP servers from manifest
+        ...customMcp,
       },
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
