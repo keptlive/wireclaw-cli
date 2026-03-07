@@ -39,28 +39,40 @@ const GroupManifestSchema = z.object({
     handle: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
     description: z.string().optional(),
   }),
-  context: z.object({
-    system_prompt: z.string().optional(),
-    model: z.string().optional(),
-  }).optional(),
-  channel_binding: z.object({
-    jid: z.string().min(1),
-    trigger: z.string().min(1),
-    requires_trigger: z.boolean().default(true),
-  }).optional(),
-  dependencies: z.object({
-    system_packages: z.array(z.string()).optional(),
-    env_vars: z.array(z.string()).optional(),
-    mcp_servers: z.record(z.string(), McpServerSpec).optional(),
-  }).optional(),
-  container: z.object({
-    timeout: z.number().positive().optional(),
-    additional_mounts: z.array(z.object({
-      host_path: z.string(),
-      container_path: z.string().optional(),
-      readonly: z.boolean().default(true),
-    })).optional(),
-  }).optional(),
+  context: z
+    .object({
+      system_prompt: z.string().optional(),
+      model: z.string().optional(),
+    })
+    .optional(),
+  channel_binding: z
+    .object({
+      jid: z.string().min(1),
+      trigger: z.string().min(1),
+      requires_trigger: z.boolean().default(true),
+    })
+    .optional(),
+  dependencies: z
+    .object({
+      system_packages: z.array(z.string()).optional(),
+      env_vars: z.array(z.string()).optional(),
+      mcp_servers: z.record(z.string(), McpServerSpec).optional(),
+    })
+    .optional(),
+  container: z
+    .object({
+      timeout: z.number().positive().optional(),
+      additional_mounts: z
+        .array(
+          z.object({
+            host_path: z.string(),
+            container_path: z.string().optional(),
+            readonly: z.boolean().default(true),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
   skills: z.array(z.string()).optional(),
 });
 
@@ -121,7 +133,16 @@ export function discoverManifests(): string[] {
  * Normalize an MCP server spec from shorthand string to full object.
  */
 export function normalizeMcpServer(
-  spec: string | { command?: string; args?: string[]; type?: string; url?: string; headers?: Record<string, string>; env?: Record<string, string> },
+  spec:
+    | string
+    | {
+        command?: string;
+        args?: string[];
+        type?: string;
+        url?: string;
+        headers?: Record<string, string>;
+        env?: Record<string, string>;
+      },
 ): McpServerConfig {
   if (typeof spec === 'string') {
     const parts = spec.split(/\s+/);
@@ -151,14 +172,14 @@ export function manifestToRegisteredGroup(
   const handle = manifest.identity.handle;
   const jid = manifest.channel_binding?.jid || `aw:${handle}`;
 
-  const mcpServers: Record<string, McpServerConfig> | undefined =
-    manifest.dependencies?.mcp_servers
-      ? Object.fromEntries(
-          Object.entries(manifest.dependencies.mcp_servers).map(
-            ([name, spec]) => [name, normalizeMcpServer(spec)],
-          ),
-        )
-      : undefined;
+  const mcpServers: Record<string, McpServerConfig> | undefined = manifest
+    .dependencies?.mcp_servers
+    ? Object.fromEntries(
+        Object.entries(manifest.dependencies.mcp_servers).map(
+          ([name, spec]) => [name, normalizeMcpServer(spec)],
+        ),
+      )
+    : undefined;
 
   const group: RegisteredGroup = {
     name: manifest.identity.group_name,
@@ -187,7 +208,9 @@ export function manifestToRegisteredGroup(
  * Create an AgentWire agent for the manifest handle.
  * Returns agentId on success, undefined if not configured or handle taken.
  */
-async function createAgentWireAgent(handle: string): Promise<{ agentId?: string; handleTaken?: boolean }> {
+async function createAgentWireAgent(
+  handle: string,
+): Promise<{ agentId?: string; handleTaken?: boolean }> {
   const env = readEnvFile(['AGENTWIRE_API_KEY', 'AGENTWIRE_URL']);
   if (!env.AGENTWIRE_API_KEY) return {};
 
@@ -196,21 +219,31 @@ async function createAgentWireAgent(handle: string): Promise<{ agentId?: string;
     const res = await fetch(`${url}/api/agents`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${env.AGENTWIRE_API_KEY}`,
+        Authorization: `Bearer ${env.AGENTWIRE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ handle }),
     });
     if (res.ok) {
-      const data = await res.json() as { agentId: string; handle: string; email: string };
-      logger.info({ handle, agentId: data.agentId, email: data.email }, 'AgentWire agent created');
+      const data = (await res.json()) as {
+        agentId: string;
+        handle: string;
+        email: string;
+      };
+      logger.info(
+        { handle, agentId: data.agentId, email: data.email },
+        'AgentWire agent created',
+      );
       return { agentId: data.agentId };
     }
-    const err = await res.json() as { error: string };
+    const err = (await res.json()) as { error: string };
     if (res.status === 409 || err.error?.toLowerCase().includes('taken')) {
       return { handleTaken: true };
     }
-    logger.warn({ handle, status: res.status, error: err.error }, 'Failed to create AgentWire agent');
+    logger.warn(
+      { handle, status: res.status, error: err.error },
+      'Failed to create AgentWire agent',
+    );
     return {};
   } catch (err) {
     logger.warn({ handle, err }, 'AgentWire API call failed');
@@ -219,12 +252,66 @@ async function createAgentWireAgent(handle: string): Promise<{ agentId?: string;
 }
 
 /**
+ * Send an introduction email from a newly created agent to the owner.
+ * Uses the AgentWire send_email MCP tool via the REST API.
+ */
+async function sendIntroEmail(
+  manifest: GroupManifest,
+  agentId: string,
+): Promise<void> {
+  const env = readEnvFile(['AGENTWIRE_API_KEY', 'AGENTWIRE_URL', 'AGENTWIRE_OWNER_EMAIL']);
+  if (!env.AGENTWIRE_API_KEY || !env.AGENTWIRE_OWNER_EMAIL) return;
+
+  const url = env.AGENTWIRE_URL || 'https://agentwire.run';
+  const handle = manifest.identity.handle;
+  const groupName = manifest.identity.group_name;
+  const description = manifest.identity.description || 'No description provided.';
+  const model = manifest.context?.model || 'default';
+  const mcpServers = manifest.dependencies?.mcp_servers
+    ? Object.keys(manifest.dependencies.mcp_servers).join(', ')
+    : 'none';
+  const skills = manifest.skills?.join(', ') || 'none';
+
+  const subject = `${groupName} is online`;
+  const body = [
+    `Hi! I'm ${groupName} (${handle}@agentwire.email), a new WireClaw agent.`,
+    '',
+    `Description: ${description}`,
+    `Model: ${model}`,
+    `MCP servers: ${mcpServers}`,
+    `Skills: ${skills}`,
+    '',
+    `I'm ready to receive messages. Reply to this email or reach me at ${handle}@agentwire.email.`,
+  ].join('\n');
+
+  try {
+    const res = await fetch(`${url}/api/agents/${agentId}/send-email`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.AGENTWIRE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: env.AGENTWIRE_OWNER_EMAIL,
+        subject,
+        body,
+      }),
+    });
+    if (res.ok) {
+      logger.info({ handle, to: env.AGENTWIRE_OWNER_EMAIL }, 'Intro email sent');
+    } else {
+      const err = await res.text();
+      logger.warn({ handle, status: res.status, err }, 'Failed to send intro email');
+    }
+  } catch (err) {
+    logger.warn({ handle, err }, 'Intro email API call failed');
+  }
+}
+
+/**
  * Setup the group folder: create directories, copy CLAUDE.md, sync skills.
  */
-function setupGroupFolder(
-  manifest: GroupManifest,
-  manifestDir: string,
-): void {
+function setupGroupFolder(manifest: GroupManifest, manifestDir: string): void {
   const groupDir = path.join(GROUPS_DIR, manifest.identity.handle);
   fs.mkdirSync(path.join(groupDir, 'logs'), { recursive: true });
 
@@ -246,7 +333,10 @@ function setupGroupFolder(
     for (const skill of manifest.skills) {
       const skillDir = path.join(skillsSrc, skill);
       if (!fs.existsSync(skillDir)) {
-        logger.warn({ skill }, 'Skill directory not found in container/skills/');
+        logger.warn(
+          { skill },
+          'Skill directory not found in container/skills/',
+        );
       }
     }
   }
@@ -256,7 +346,9 @@ export interface ApplyDeps {
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   getManifestHash: (jid: string) => string | undefined;
   setManifestHash: (jid: string, hash: string) => void;
-  getRegisteredGroup: (jid: string) => (RegisteredGroup & { jid: string }) | undefined;
+  getRegisteredGroup: (
+    jid: string,
+  ) => (RegisteredGroup & { jid: string }) | undefined;
 }
 
 export interface ApplyResult {
@@ -280,12 +372,22 @@ export async function applyManifest(
     manifest = loadManifest(manifestPath);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { status: 'error', handle: '?', jid: '?', error: `Parse error: ${msg}` };
+    return {
+      status: 'error',
+      handle: '?',
+      jid: '?',
+      error: `Parse error: ${msg}`,
+    };
   }
 
   const handle = manifest.identity.handle;
   if (!isValidGroupFolder(handle)) {
-    return { status: 'error', handle, jid: '?', error: `Invalid handle: ${handle}` };
+    return {
+      status: 'error',
+      handle,
+      jid: '?',
+      error: `Invalid handle: ${handle}`,
+    };
   }
 
   const hash = manifestHash(manifestPath);
@@ -305,7 +407,13 @@ export async function applyManifest(
     // Create AgentWire agent
     const result = await createAgentWireAgent(handle);
     if (result.handleTaken) {
-      return { status: 'error', handle, jid: tentativeJid, error: `Handle "${handle}" is already taken on AgentWire`, handleTaken: true };
+      return {
+        status: 'error',
+        handle,
+        jid: tentativeJid,
+        error: `Handle "${handle}" is already taken on AgentWire`,
+        handleTaken: true,
+      };
     }
     agentwireAgentId = result.agentId;
   }
@@ -327,5 +435,11 @@ export async function applyManifest(
 
   const action = existing ? 'updated' : 'created';
   logger.info({ handle, jid, action }, `Manifest applied (${action})`);
+
+  // Send intro email for newly created agents
+  if (action === 'created' && agentwireAgentId) {
+    await sendIntroEmail(manifest, agentwireAgentId);
+  }
+
   return { status: action, handle, jid };
 }

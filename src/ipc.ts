@@ -5,7 +5,15 @@ import { CronExpressionParser } from 'cron-parser';
 
 import { DATA_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
 import { AvailableGroup } from './container-runner.js';
-import { createTask, deleteTask, getManifestHash, getRegisteredGroup, getTaskById, setManifestHash, updateTask } from './db.js';
+import {
+  createTask,
+  deleteTask,
+  getManifestHash,
+  getRegisteredGroup,
+  getTaskById,
+  setManifestHash,
+  updateTask,
+} from './db.js';
 import { readEnvFile } from './env.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
@@ -17,7 +25,9 @@ import { RegisteredGroup } from './types.js';
  * Uses the global AGENTWIRE_API_KEY from .env.
  * Returns the agentId on success, undefined on failure or if not configured.
  */
-async function createAgentWireAgent(handle: string): Promise<string | undefined> {
+async function createAgentWireAgent(
+  handle: string,
+): Promise<string | undefined> {
   const env = readEnvFile(['AGENTWIRE_API_KEY', 'AGENTWIRE_URL']);
   if (!env.AGENTWIRE_API_KEY) return undefined;
 
@@ -26,18 +36,28 @@ async function createAgentWireAgent(handle: string): Promise<string | undefined>
     const res = await fetch(`${url}/api/agents`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${env.AGENTWIRE_API_KEY}`,
+        Authorization: `Bearer ${env.AGENTWIRE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ handle }),
     });
     if (res.ok) {
-      const data = await res.json() as { agentId: string; handle: string; email: string };
-      logger.info({ handle, agentId: data.agentId, email: data.email }, 'AgentWire agent created');
+      const data = (await res.json()) as {
+        agentId: string;
+        handle: string;
+        email: string;
+      };
+      logger.info(
+        { handle, agentId: data.agentId, email: data.email },
+        'AgentWire agent created',
+      );
       return data.agentId;
     }
-    const err = await res.json() as { error: string };
-    logger.warn({ handle, status: res.status, error: err.error }, 'Failed to create AgentWire agent');
+    const err = (await res.json()) as { error: string };
+    logger.warn(
+      { handle, status: res.status, error: err.error },
+      'Failed to create AgentWire agent',
+    );
     return undefined;
   } catch (err) {
     logger.warn({ handle, err }, 'AgentWire API call failed');
@@ -470,9 +490,15 @@ export async function processTaskIpc(
             setManifestHash,
             getRegisteredGroup,
           });
-          logger.info({ manifestPath: data.manifestPath, ...result }, 'Manifest applied via IPC');
+          logger.info(
+            { manifestPath: data.manifestPath, ...result },
+            'Manifest applied via IPC',
+          );
         } catch (err) {
-          logger.warn({ manifestPath: data.manifestPath, err }, 'Failed to apply manifest via IPC');
+          logger.warn(
+            { manifestPath: data.manifestPath, err },
+            'Failed to apply manifest via IPC',
+          );
         }
         break;
       }

@@ -121,16 +121,26 @@ function createSchema(database: Database.Database): void {
 
   // Add AgentWire agent ID and model columns to registered_groups
   try {
-    database.exec(`ALTER TABLE registered_groups ADD COLUMN agentwire_agent_id TEXT`);
-  } catch { /* column already exists */ }
+    database.exec(
+      `ALTER TABLE registered_groups ADD COLUMN agentwire_agent_id TEXT`,
+    );
+  } catch {
+    /* column already exists */
+  }
   try {
     database.exec(`ALTER TABLE registered_groups ADD COLUMN model TEXT`);
-  } catch { /* column already exists */ }
+  } catch {
+    /* column already exists */
+  }
 
   // Add manifest_hash for YAML manifest idempotency tracking
   try {
-    database.exec(`ALTER TABLE registered_groups ADD COLUMN manifest_hash TEXT`);
-  } catch { /* column already exists */ }
+    database.exec(
+      `ALTER TABLE registered_groups ADD COLUMN manifest_hash TEXT`,
+    );
+  } catch {
+    /* column already exists */
+  }
 
   // Add channel and is_group columns if they don't exist (migration for existing DBs)
   try {

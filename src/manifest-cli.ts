@@ -60,9 +60,10 @@ async function applyAll(targets: string[]): Promise<void> {
 
     if (stat.isDirectory()) {
       // Apply all .yaml files in the directory
-      const files = fs.readdirSync(target)
-        .filter(f => f.endsWith('.yaml') || f.endsWith('.yml'))
-        .map(f => path.join(target, f));
+      const files = fs
+        .readdirSync(target)
+        .filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
+        .map((f) => path.join(target, f));
 
       if (files.length === 0) {
         // Maybe it's a group dir with wireclaw.yaml inside
@@ -83,21 +84,30 @@ async function applyAll(targets: string[]): Promise<void> {
   // Print summary
   console.log('\nResults:');
   for (const r of results) {
-    const icon = r.status === 'created' ? '+' :
-                 r.status === 'updated' ? '~' :
-                 r.status === 'unchanged' ? '=' : '!';
+    const icon =
+      r.status === 'created'
+        ? '+'
+        : r.status === 'updated'
+          ? '~'
+          : r.status === 'unchanged'
+            ? '='
+            : '!';
     const msg = r.error ? ` (${r.error})` : '';
     console.log(`  [${icon}] ${r.handle} → ${r.jid} (${r.status})${msg}`);
     if (r.handleTaken) {
-      console.log(`      Handle "${r.handle}" is taken. Edit the YAML and choose a different handle.`);
+      console.log(
+        `      Handle "${r.handle}" is taken. Edit the YAML and choose a different handle.`,
+      );
     }
   }
 
-  const created = results.filter(r => r.status === 'created').length;
-  const updated = results.filter(r => r.status === 'updated').length;
-  const unchanged = results.filter(r => r.status === 'unchanged').length;
-  const errors = results.filter(r => r.status === 'error').length;
-  console.log(`\n${created} created, ${updated} updated, ${unchanged} unchanged, ${errors} errors`);
+  const created = results.filter((r) => r.status === 'created').length;
+  const updated = results.filter((r) => r.status === 'updated').length;
+  const unchanged = results.filter((r) => r.status === 'unchanged').length;
+  const errors = results.filter((r) => r.status === 'error').length;
+  console.log(
+    `\n${created} created, ${updated} updated, ${unchanged} unchanged, ${errors} errors`,
+  );
 }
 
 async function main(): Promise<void> {
@@ -120,7 +130,9 @@ async function main(): Promise<void> {
     // Auto-discover
     const discovered = discoverManifests();
     if (discovered.length === 0) {
-      console.log('No manifests found. Place wireclaw.yaml in groups/{handle}/ or manifests/');
+      console.log(
+        'No manifests found. Place wireclaw.yaml in groups/{handle}/ or manifests/',
+      );
       return;
     }
     console.log(`Discovered ${discovered.length} manifest(s):`);

@@ -19,11 +19,13 @@ import path from 'path';
 import readline from 'readline';
 
 import { DATA_DIR } from './config.js';
+import { ContainerOutput, runContainerAgent } from './container-runner.js';
 import {
-  ContainerOutput,
-  runContainerAgent,
-} from './container-runner.js';
-import { getAllRegisteredGroups, getSession, initDatabase, setSession } from './db.js';
+  getAllRegisteredGroups,
+  getSession,
+  initDatabase,
+  setSession,
+} from './db.js';
 import { RegisteredGroup } from './types.js';
 
 const BLUE = '\x1b[34m';
@@ -181,7 +183,9 @@ async function main(): Promise<void> {
       }
 
       if (Buffer.byteLength(trimmed) > MAX_INPUT_BYTES) {
-        printSystem(`Input too large (${Buffer.byteLength(trimmed)} bytes, max ${MAX_INPUT_BYTES}). Truncate and retry.`);
+        printSystem(
+          `Input too large (${Buffer.byteLength(trimmed)} bytes, max ${MAX_INPUT_BYTES}). Truncate and retry.`,
+        );
         promptUser();
         return;
       }
