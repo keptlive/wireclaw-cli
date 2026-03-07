@@ -15,7 +15,12 @@
 import { readEnvFile } from '../env.js';
 import { logger } from '../logger.js';
 import { registerChannel, ChannelOpts } from './registry.js';
-import { Channel, OnChatMetadata, OnInboundMessage, RegisteredGroup } from '../types.js';
+import {
+  Channel,
+  OnChatMetadata,
+  OnInboundMessage,
+  RegisteredGroup,
+} from '../types.js';
 
 interface AgentWireConfig {
   apiKey: string;
@@ -97,7 +102,9 @@ export class AgentWireChannel implements Channel {
       });
 
       if (!response.ok) {
-        throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
+        throw new Error(
+          `SSE connection failed: ${response.status} ${response.statusText}`,
+        );
       }
 
       if (!response.body) {
@@ -187,7 +194,10 @@ export class AgentWireChannel implements Channel {
     try {
       msg = JSON.parse(data);
     } catch {
-      logger.debug({ data: data.slice(0, 100) }, 'AgentWire: non-JSON SSE data');
+      logger.debug(
+        { data: data.slice(0, 100) },
+        'AgentWire: non-JSON SSE data',
+      );
       return;
     }
 
@@ -197,15 +207,21 @@ export class AgentWireChannel implements Channel {
     this.handleNotification(msg.method, msg.params || {});
   }
 
-  private handleNotification(method: string, params: Record<string, unknown>): void {
-    const jid = `aw:${this.config.handle}`;
+  private handleNotification(
+    method: string,
+    params: Record<string, unknown>,
+  ): void {
+    const jid = `agentwire:${this.config.handle}`;
     const timestamp = (params.receivedAt as string) || new Date().toISOString();
 
     switch (method) {
       case 'notifications/email/inbound': {
         const email = params as unknown as EmailNotification;
         if (email.status !== 'DELIVERED') {
-          logger.debug({ emailId: email.emailId, status: email.status }, 'Skipping non-delivered email');
+          logger.debug(
+            { emailId: email.emailId, status: email.status },
+            'Skipping non-delivered email',
+          );
           return;
         }
         const content = `[Email from ${email.from}]\nSubject: ${email.subject}\n\n${email.body}`;
@@ -217,14 +233,20 @@ export class AgentWireChannel implements Channel {
           content,
           timestamp,
         });
-        logger.info({ from: email.from, subject: email.subject }, 'AgentWire email received');
+        logger.info(
+          { from: email.from, subject: email.subject },
+          'AgentWire email received',
+        );
         break;
       }
 
       case 'notifications/sms/inbound': {
         const sms = params as unknown as SmsNotification;
         if (sms.status !== 'DELIVERED') {
-          logger.debug({ smsId: sms.smsId, status: sms.status }, 'Skipping non-delivered SMS');
+          logger.debug(
+            { smsId: sms.smsId, status: sms.status },
+            'Skipping non-delivered SMS',
+          );
           return;
         }
         const mediaNote = sms.media?.length
@@ -255,7 +277,10 @@ export class AgentWireChannel implements Channel {
           content,
           timestamp,
         });
-        logger.info({ webhookId: webhook.webhookId }, 'AgentWire webhook received');
+        logger.info(
+          { webhookId: webhook.webhookId },
+          'AgentWire webhook received',
+        );
         break;
       }
 
@@ -276,7 +301,13 @@ export class AgentWireChannel implements Channel {
     },
   ): void {
     // Store chat metadata
-    this.opts.onChatMetadata(jid, msg.timestamp, this.config.handle, 'agentwire', false);
+    this.opts.onChatMetadata(
+      jid,
+      msg.timestamp,
+      this.config.handle,
+      'agentwire',
+      false,
+    );
 
     // Only deliver if group is registered
     const group = this.opts.registeredGroups()[jid];
@@ -325,7 +356,7 @@ export class AgentWireChannel implements Channel {
   }
 
   ownsJid(jid: string): boolean {
-    return jid.startsWith('aw:');
+    return jid.startsWith('agentwire:');
   }
 
   async disconnect(): Promise<void> {
@@ -347,8 +378,14 @@ export class AgentWireChannel implements Channel {
 
     // Exponential backoff with jitter
     const jitter = Math.random() * 1000;
-    const delay = Math.min(this.reconnectDelay + jitter, this.maxReconnectDelay);
-    this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
+    const delay = Math.min(
+      this.reconnectDelay + jitter,
+      this.maxReconnectDelay,
+    );
+    this.reconnectDelay = Math.min(
+      this.reconnectDelay * 2,
+      this.maxReconnectDelay,
+    );
 
     logger.debug({ delay: Math.round(delay) }, 'AgentWire reconnect scheduled');
     this.reconnectTimer = setTimeout(() => {
@@ -366,10 +403,19 @@ registerChannel('agentwire', (opts: ChannelOpts) => {
     'AGENTWIRE_URL',
   ]);
 
-  const apiKey = process.env.AGENTWIRE_API_KEY || envVars.AGENTWIRE_API_KEY || '';
-  const agentId = process.env.AGENTWIRE_AGENT_ID || envVars.AGENTWIRE_AGENT_ID || '';
-  const handle = process.env.AGENTWIRE_HANDLE || envVars.AGENTWIRE_HANDLE || process.env.ASSISTANT_NAME || '';
-  const baseUrl = process.env.AGENTWIRE_URL || envVars.AGENTWIRE_URL || 'https://agentwire.run';
+  const apiKey =
+    process.env.AGENTWIRE_API_KEY || envVars.AGENTWIRE_API_KEY || '';
+  const agentId =
+    process.env.AGENTWIRE_AGENT_ID || envVars.AGENTWIRE_AGENT_ID || '';
+  const handle =
+    process.env.AGENTWIRE_HANDLE ||
+    envVars.AGENTWIRE_HANDLE ||
+    process.env.ASSISTANT_NAME ||
+    '';
+  const baseUrl =
+    process.env.AGENTWIRE_URL ||
+    envVars.AGENTWIRE_URL ||
+    'https://agentwire.run';
 
   if (!apiKey || !agentId) {
     // Not configured — skip silently (other channels may handle messaging)
