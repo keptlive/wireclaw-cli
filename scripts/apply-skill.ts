@@ -3,7 +3,7 @@ import { initNanoclawDir } from '../skills-engine/init.js';
 
 const args = process.argv.slice(2);
 
-// Handle --init flag: initialize .nanoclaw/ directory and exit
+// Handle --init flag: initialize .wireclaw/ directory and exit
 if (args.includes('--init')) {
   initNanoclawDir();
   console.log(JSON.stringify({ success: true, action: 'init' }));

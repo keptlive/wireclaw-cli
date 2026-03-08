@@ -19,7 +19,7 @@ async function transcribeWithWhisperCpp(
   audioBuffer: Buffer,
 ): Promise<string | null> {
   const tmpDir = os.tmpdir();
-  const id = `nanoclaw-voice-${Date.now()}`;
+  const id = `wireclaw-voice-${Date.now()}`;
   const tmpOgg = path.join(tmpDir, `${id}.ogg`);
   const tmpWav = path.join(tmpDir, `${id}.wav`);
 

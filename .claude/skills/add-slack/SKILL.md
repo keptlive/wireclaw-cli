@@ -5,13 +5,13 @@ description: Add Slack as a channel. Can replace WhatsApp entirely or run alongs
 
 # Add Slack Channel
 
-This skill adds Slack support to NanoClaw using the skills engine for deterministic code changes, then walks through interactive setup.
+This skill adds Slack support to WireClaw using the skills engine for deterministic code changes, then walks through interactive setup.
 
 ## Phase 1: Pre-flight
 
 ### Check if already applied
 
-Read `.nanoclaw/state.yaml`. If `slack` is in `applied_skills`, skip to Phase 3 (Setup). The code changes are already in place.
+Read `.wireclaw/state.yaml`. If `slack` is in `applied_skills`, skip to Phase 3 (Setup). The code changes are already in place.
 
 ### Ask the user
 
@@ -23,7 +23,7 @@ Run the skills engine to apply this skill's code package. The package files are 
 
 ### Initialize skills system (if needed)
 
-If `.nanoclaw/` directory doesn't exist yet:
+If `.wireclaw/` directory doesn't exist yet:
 
 ```bash
 npx tsx scripts/apply-skill.ts --init
@@ -42,7 +42,7 @@ This deterministically:
 - Adds `src/channels/slack.test.ts` (46 unit tests)
 - Appends `import './slack.js'` to the channel barrel file `src/channels/index.ts`
 - Installs the `@slack/bolt` npm dependency
-- Records the application in `.nanoclaw/state.yaml`
+- Records the application in `.wireclaw/state.yaml`
 
 If the apply reports merge conflicts, read the intent file:
 - `modify/src/channels/index.ts.intent.md` — what changed and invariants
@@ -94,7 +94,7 @@ The container reads environment from `data/env/env`, not `.env` directly.
 
 ```bash
 npm run build
-launchctl kickstart -k gui/$(id -u)/com.nanoclaw
+launchctl kickstart -k gui/$(id -u)/com.wireclaw
 ```
 
 ## Phase 4: Registration
@@ -107,7 +107,7 @@ Tell the user:
 > 2. In that channel, the channel ID is in the URL when you open it in a browser: `https://app.slack.com/client/T.../C0123456789` — the `C...` part is the channel ID
 > 3. Alternatively, right-click the channel name → **Copy link** — the channel ID is the last path segment
 >
-> The JID format for NanoClaw is: `slack:C0123456789`
+> The JID format for WireClaw is: `slack:C0123456789`
 
 Wait for the user to provide the channel ID.
 
@@ -155,7 +155,7 @@ Tell the user:
 ### Check logs if needed
 
 ```bash
-tail -f logs/nanoclaw.log
+tail -f logs/wireclaw.log
 ```
 
 ## Troubleshooting
@@ -165,7 +165,7 @@ tail -f logs/nanoclaw.log
 1. Check `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` are set in `.env` AND synced to `data/env/env`
 2. Check channel is registered: `sqlite3 store/messages.db "SELECT * FROM registered_groups WHERE jid LIKE 'slack:%'"`
 3. For non-main channels: message must include trigger pattern
-4. Service is running: `launchctl list | grep nanoclaw`
+4. Service is running: `launchctl list | grep wireclaw`
 
 ### Bot connected but not receiving messages
 
@@ -188,7 +188,7 @@ If the bot logs `missing_scope` errors:
 3. **Reinstall the app** to your workspace — scope changes require reinstallation
 4. Copy the new Bot Token (it changes on reinstall) and update `.env`
 5. Sync: `mkdir -p data/env && cp .env data/env/env`
-6. Restart: `launchctl kickstart -k gui/$(id -u)/com.nanoclaw`
+6. Restart: `launchctl kickstart -k gui/$(id -u)/com.wireclaw`
 
 ### Getting channel ID
 

@@ -5,7 +5,7 @@ description: Switch from Docker to Apple Container for macOS-native container is
 
 # Convert to Apple Container
 
-This skill switches NanoClaw's container runtime from Docker to Apple Container (macOS-only). It uses the skills engine for deterministic code changes, then walks through verification.
+This skill switches WireClaw's container runtime from Docker to Apple Container (macOS-only). It uses the skills engine for deterministic code changes, then walks through verification.
 
 **What this changes:**
 - Container runtime binary: `docker` → `container`
@@ -41,7 +41,7 @@ Apple Container requires macOS. It does not work on Linux.
 
 ### Check if already applied
 
-Read `.nanoclaw/state.yaml`. If `convert-to-apple-container` is in `applied_skills`, skip to Phase 3 (Verify). The code changes are already in place.
+Read `.wireclaw/state.yaml`. If `convert-to-apple-container` is in `applied_skills`, skip to Phase 3 (Verify). The code changes are already in place.
 
 ### Check current runtime
 
@@ -57,7 +57,7 @@ Run the skills engine to apply this skill's code package. The package files are 
 
 ### Initialize skills system (if needed)
 
-If `.nanoclaw/` directory doesn't exist yet:
+If `.wireclaw/` directory doesn't exist yet:
 
 ```bash
 npx tsx scripts/apply-skill.ts --init
@@ -77,7 +77,7 @@ This deterministically:
 - Updates `src/container-runner.ts` with .env shadow mount fix and privilege dropping
 - Updates `container/Dockerfile` with entrypoint that shadows .env via `mount --bind`
 - Updates `container/build.sh` to default to `container` runtime
-- Records the application in `.nanoclaw/state.yaml`
+- Records the application in `.wireclaw/state.yaml`
 
 If the apply reports merge conflicts, read the intent files:
 - `modify/src/container-runtime.ts.intent.md` — what changed and invariants
@@ -111,7 +111,7 @@ container system status || container system start
 ### Test basic execution
 
 ```bash
-echo '{}' | container run -i --entrypoint /bin/echo nanoclaw-agent:latest "Container OK"
+echo '{}' | container run -i --entrypoint /bin/echo wireclaw-agent:latest "Container OK"
 ```
 
 ### Test readonly mounts
@@ -120,7 +120,7 @@ echo '{}' | container run -i --entrypoint /bin/echo nanoclaw-agent:latest "Conta
 mkdir -p /tmp/test-ro && echo "test" > /tmp/test-ro/file.txt
 container run --rm --entrypoint /bin/bash \
   --mount type=bind,source=/tmp/test-ro,target=/test,readonly \
-  nanoclaw-agent:latest \
+  wireclaw-agent:latest \
   -c "cat /test/file.txt && touch /test/new.txt 2>&1 || echo 'Write blocked (expected)'"
 rm -rf /tmp/test-ro
 ```
@@ -133,7 +133,7 @@ Expected: Read succeeds, write fails with "Read-only file system".
 mkdir -p /tmp/test-rw
 container run --rm --entrypoint /bin/bash \
   -v /tmp/test-rw:/test \
-  nanoclaw-agent:latest \
+  wireclaw-agent:latest \
   -c "echo 'test write' > /test/new.txt && cat /test/new.txt"
 cat /tmp/test-rw/new.txt && rm -rf /tmp/test-rw
 ```
@@ -144,7 +144,7 @@ Expected: Both operations succeed.
 
 ```bash
 npm run build
-launchctl kickstart -k gui/$(id -u)/com.nanoclaw
+launchctl kickstart -k gui/$(id -u)/com.wireclaw
 ```
 
 Send a message via WhatsApp and verify the agent responds.

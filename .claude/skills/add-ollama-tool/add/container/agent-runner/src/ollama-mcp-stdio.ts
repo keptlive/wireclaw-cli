@@ -1,5 +1,5 @@
 /**
- * Ollama MCP Server for NanoClaw
+ * Ollama MCP Server for WireClaw
  * Exposes local Ollama models as tools for the container agent.
  * Uses host.docker.internal to reach the host's Ollama instance from Docker.
  */

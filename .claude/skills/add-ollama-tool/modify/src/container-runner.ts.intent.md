@@ -1,7 +1,7 @@
 # Intent: src/container-runner.ts modifications
 
 ## What changed
-Surface Ollama MCP server log lines at info level so they appear in `nanoclaw.log` for the monitoring watcher script.
+Surface Ollama MCP server log lines at info level so they appear in `wireclaw.log` for the monitoring watcher script.
 
 ## Key sections
 

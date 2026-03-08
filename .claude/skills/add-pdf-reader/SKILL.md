@@ -1,6 +1,6 @@
 ---
 name: add-pdf-reader
-description: Add PDF reading to NanoClaw agents. Extracts text from PDFs via pdftotext CLI. Handles WhatsApp attachments, URLs, and local files.
+description: Add PDF reading to WireClaw agents. Extracts text from PDFs via pdftotext CLI. Handles WhatsApp attachments, URLs, and local files.
 ---
 
 # Add PDF Reader
@@ -11,13 +11,13 @@ Adds PDF reading capability to all container agents using poppler-utils (pdftote
 
 ### Check if already applied
 
-Read `.nanoclaw/state.yaml`. If `add-pdf-reader` is in `applied_skills`, skip to Phase 3 (Verify).
+Read `.wireclaw/state.yaml`. If `add-pdf-reader` is in `applied_skills`, skip to Phase 3 (Verify).
 
 ## Phase 2: Apply Code Changes
 
 ### Initialize skills system (if needed)
 
-If `.nanoclaw/` directory doesn't exist:
+If `.wireclaw/` directory doesn't exist:
 
 ```bash
 npx tsx scripts/apply-skill.ts --init
@@ -35,7 +35,7 @@ This deterministically:
 - Three-way merges `poppler-utils` + COPY into `container/Dockerfile`
 - Three-way merges PDF attachment download into `src/channels/whatsapp.ts`
 - Three-way merges PDF tests into `src/channels/whatsapp.test.ts`
-- Records application in `.nanoclaw/state.yaml`
+- Records application in `.wireclaw/state.yaml`
 
 If merge conflicts occur, read the intent files:
 - `modify/container/Dockerfile.intent.md`
@@ -58,8 +58,8 @@ npm run build
 ### Restart service
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.nanoclaw  # macOS
-# Linux: systemctl --user restart nanoclaw
+launchctl kickstart -k gui/$(id -u)/com.wireclaw  # macOS
+# Linux: systemctl --user restart wireclaw
 ```
 
 ## Phase 3: Verify
@@ -78,7 +78,7 @@ Ask the agent to read a PDF from a URL. It should use `pdf-reader fetch <url>`.
 ### Check logs if needed
 
 ```bash
-tail -f logs/nanoclaw.log | grep -i pdf
+tail -f logs/wireclaw.log | grep -i pdf
 ```
 
 Look for:

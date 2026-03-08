@@ -1,5 +1,5 @@
 /**
- * Container Runner for NanoClaw
+ * Container Runner for WireClaw
  * Spawns agent execution in containers and handles IPC
  */
 import { ChildProcess, exec, spawn } from 'child_process';
@@ -30,8 +30,8 @@ import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
-const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
-const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
+const OUTPUT_START_MARKER = '---WIRECLAW_OUTPUT_START---';
+const OUTPUT_END_MARKER = '---WIRECLAW_OUTPUT_END---';
 
 export interface ContainerInput {
   prompt: string;
@@ -44,6 +44,11 @@ export interface ContainerInput {
   secrets?: Record<string, string>;
   mcpServers?: Record<string, import('./types.js').McpServerConfig>;
   systemPackages?: string[];
+  replyContext?: {
+    type: string;
+    from: string;
+    subject?: string;
+  };
 }
 
 export interface ContainerOutput {
@@ -338,7 +343,7 @@ export async function runContainerAgent(
 
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
-  const containerName = `nanoclaw-${safeName}-${Date.now()}`;
+  const containerName = `wireclaw-${safeName}-${Date.now()}`;
   const containerArgs = buildContainerArgs(mounts, containerName);
 
   logger.debug(

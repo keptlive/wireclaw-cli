@@ -6,7 +6,7 @@ export {
   SKILLS_SCHEMA_VERSION,
   CUSTOM_DIR,
   LOCK_FILE,
-  NANOCLAW_DIR,
+  WIRECLAW_DIR,
   STATE_FILE,
 } from './constants.js';
 export {

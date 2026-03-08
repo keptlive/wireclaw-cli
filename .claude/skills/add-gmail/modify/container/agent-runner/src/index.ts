@@ -1,5 +1,5 @@
 /**
- * NanoClaw Agent Runner
+ * WireClaw Agent Runner
  * Runs inside a container, receives config via stdin, outputs result to stdout
  *
  * Input protocol:
@@ -105,8 +105,8 @@ async function readStdin(): Promise<string> {
   });
 }
 
-const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
-const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
+const OUTPUT_START_MARKER = '---WIRECLAW_OUTPUT_START---';
+const OUTPUT_END_MARKER = '---WIRECLAW_OUTPUT_END---';
 
 function writeOutput(output: ContainerOutput): void {
   console.log(OUTPUT_START_MARKER);
@@ -432,7 +432,7 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*',
+        'mcp__wireclaw__*',
         'mcp__gmail__*',
       ],
       env: sdkEnv,
@@ -440,13 +440,13 @@ async function runQuery(
       allowDangerouslySkipPermissions: true,
       settingSources: ['project', 'user'],
       mcpServers: {
-        nanoclaw: {
+        wireclaw: {
           command: 'node',
           args: [mcpServerPath],
           env: {
-            NANOCLAW_CHAT_JID: containerInput.chatJid,
-            NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
-            NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+            WIRECLAW_CHAT_JID: containerInput.chatJid,
+            WIRECLAW_GROUP_FOLDER: containerInput.groupFolder,
+            WIRECLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
         gmail: {

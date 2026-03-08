@@ -1,5 +1,5 @@
 /**
- * NanoClaw Agent Runner
+ * WireClaw Agent Runner
  * Runs inside a container, receives config via stdin, outputs result to stdout
  *
  * Input protocol:
@@ -22,7 +22,7 @@ import { fileURLToPath } from 'url';
 interface McpServerConfig {
   command?: string;
   args?: string[];
-  type?: 'sse' | 'stdio';
+  type?: 'sse' | 'http' | 'streamable-http' | 'stdio';
   url?: string;
   headers?: Record<string, string>;
   env?: Record<string, string>;
@@ -39,6 +39,11 @@ interface ContainerInput {
   secrets?: Record<string, string>;
   mcpServers?: Record<string, McpServerConfig>;
   systemPackages?: string[];
+  replyContext?: {
+    type: string;
+    from: string;
+    subject?: string;
+  };
 }
 
 interface ContainerOutput {
@@ -116,8 +121,8 @@ async function readStdin(): Promise<string> {
   });
 }
 
-const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
-const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
+const OUTPUT_START_MARKER = '---WIRECLAW_OUTPUT_START---';
+const OUTPUT_END_MARKER = '---WIRECLAW_OUTPUT_END---';
 
 function writeOutput(output: ContainerOutput): void {
   console.log(OUTPUT_START_MARKER);
@@ -429,9 +434,11 @@ async function runQuery(
   const customMcp: Record<string, object> = {};
   const customToolPatterns: string[] = [];
   for (const [name, spec] of Object.entries(containerInput.mcpServers || {})) {
-    if (name === 'nanoclaw' || name === 'agentwire') continue; // reserved
-    if (spec.type === 'sse' && spec.url) {
-      customMcp[name] = { type: 'sse' as const, url: spec.url, headers: spec.headers };
+    if (name === 'wireclaw' || name === 'agentwire') continue; // reserved
+    if ((spec.type === 'sse' || spec.type === 'http' || spec.type === 'streamable-http') && spec.url) {
+      // SDK uses 'http' for streamable HTTP
+      const sdkType = spec.type === 'streamable-http' ? 'http' : spec.type;
+      customMcp[name] = { type: sdkType as string, url: spec.url, headers: spec.headers };
     } else if (spec.command) {
       // Resolve $VAR references in env from sdkEnv
       const resolvedEnv: Record<string, string> = {};
@@ -461,7 +468,7 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*',
+        'mcp__wireclaw__*',
         'mcp__agentwire__*',
         ...customToolPatterns,
       ],
@@ -471,20 +478,23 @@ async function runQuery(
       allowDangerouslySkipPermissions: true,
       settingSources: ['project', 'user'],
       mcpServers: {
-        nanoclaw: {
+        wireclaw: {
           command: 'node',
           args: [mcpServerPath],
           env: {
-            NANOCLAW_CHAT_JID: containerInput.chatJid,
-            NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
-            NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+            WIRECLAW_CHAT_JID: containerInput.chatJid,
+            WIRECLAW_GROUP_FOLDER: containerInput.groupFolder,
+            WIRECLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+            WIRECLAW_REPLY_TYPE: containerInput.replyContext?.type || '',
+            WIRECLAW_REPLY_FROM: containerInput.replyContext?.from || '',
+            WIRECLAW_REPLY_SUBJECT: containerInput.replyContext?.subject || '',
           },
         },
-        // AgentWire MCP: connect to platform tools (email, SMS, memory, etc.) via SSE
+        // AgentWire MCP: connect to platform tools (email, SMS, memory, etc.) via Streamable HTTP
         ...(sdkEnv.AGENTWIRE_API_KEY && sdkEnv.AGENTWIRE_AGENT_ID ? {
           agentwire: {
-            type: 'sse' as const,
-            url: `${sdkEnv.AGENTWIRE_URL || 'https://agentwire.run'}/sse?agentId=${sdkEnv.AGENTWIRE_AGENT_ID}`,
+            type: 'http' as const,
+            url: `${sdkEnv.AGENTWIRE_URL || 'https://agentwire.run'}/mcp?agentId=${sdkEnv.AGENTWIRE_AGENT_ID}`,
             headers: {
               Authorization: `Bearer ${sdkEnv.AGENTWIRE_API_KEY}`,
             },

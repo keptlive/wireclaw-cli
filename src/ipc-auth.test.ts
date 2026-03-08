@@ -53,6 +53,8 @@ beforeEach(() => {
 
   deps = {
     sendMessage: async () => {},
+    sendEmailReply: async () => false,
+    getReplyContext: () => undefined,
     registeredGroups: () => groups,
     registerGroup: (jid, group) => {
       groups[jid] = group;

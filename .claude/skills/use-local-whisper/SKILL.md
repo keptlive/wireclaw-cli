@@ -23,7 +23,7 @@ Switches voice transcription from OpenAI's Whisper API to local whisper.cpp. Run
 
 ### Check if already applied
 
-Read `.nanoclaw/state.yaml`. If `use-local-whisper` is in `applied_skills`, skip to Phase 3 (Verify).
+Read `.wireclaw/state.yaml`. If `use-local-whisper` is in `applied_skills`, skip to Phase 3 (Verify).
 
 ### Check dependencies are installed
 
@@ -70,24 +70,24 @@ npm run build
 
 ### Ensure launchd PATH includes Homebrew
 
-The NanoClaw launchd service runs with a restricted PATH. `whisper-cli` and `ffmpeg` are in `/opt/homebrew/bin/` (Apple Silicon) or `/usr/local/bin/` (Intel), which may not be in the plist's PATH.
+The WireClaw launchd service runs with a restricted PATH. `whisper-cli` and `ffmpeg` are in `/opt/homebrew/bin/` (Apple Silicon) or `/usr/local/bin/` (Intel), which may not be in the plist's PATH.
 
 Check the current PATH:
 ```bash
-grep -A1 'PATH' ~/Library/LaunchAgents/com.nanoclaw.plist
+grep -A1 'PATH' ~/Library/LaunchAgents/com.wireclaw.plist
 ```
 
 If `/opt/homebrew/bin` is missing, add it to the `<string>` value inside the `PATH` key in the plist. Then reload:
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist
-launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist
+launchctl unload ~/Library/LaunchAgents/com.wireclaw.plist
+launchctl load ~/Library/LaunchAgents/com.wireclaw.plist
 ```
 
 ### Build and restart
 
 ```bash
 npm run build
-launchctl kickstart -k gui/$(id -u)/com.nanoclaw
+launchctl kickstart -k gui/$(id -u)/com.wireclaw
 ```
 
 ### Test
@@ -97,7 +97,7 @@ Send a voice note in any registered group. The agent should receive it as `[Voic
 ### Check logs
 
 ```bash
-tail -f logs/nanoclaw.log | grep -i -E "voice|transcri|whisper"
+tail -f logs/wireclaw.log | grep -i -E "voice|transcri|whisper"
 ```
 
 Look for:

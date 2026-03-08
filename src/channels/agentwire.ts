@@ -1,9 +1,9 @@
 /**
- * AgentWire channel — connects NanoClaw to AgentWire via SSE.
+ * AgentWire channel — connects WireClaw to AgentWire via SSE.
  *
  * Manages SSE connections for ALL registered groups with agentwire: JIDs.
  * Each agent gets its own SSE stream. Inbound notifications (email, SMS,
- * talk page, webhooks) are routed as NanoClaw messages. Outbound messages
+ * talk page, webhooks) are routed as WireClaw messages. Outbound messages
  * are posted to the agent's talk page via REST API.
  *
  * Required env vars:
@@ -21,6 +21,17 @@ import { Channel, RegisteredGroup } from '../types.js';
 
 /** JID prefix for AgentWire agents */
 export const AW_JID_PREFIX = 'agentwire:';
+
+export interface ReplyContext {
+  type: 'email' | 'talk' | 'sms' | 'webhook';
+  from: string;
+  subject?: string;
+}
+
+/** Strip CRLF and control chars to prevent email header injection */
+export function sanitizeHeader(value: string): string {
+  return value.replace(/[\r\n\x00-\x1f]/g, '');
+}
 
 interface AgentSSEConnection {
   handle: string;
@@ -70,6 +81,7 @@ export class AgentWireChannel implements Channel {
   private opts: ChannelOpts;
   private connected = false;
   private connections = new Map<string, AgentSSEConnection>(); // jid → connection
+  private replyContexts = new Map<string, ReplyContext>(); // jid → last inbound context
   private syncInterval: ReturnType<typeof setInterval> | null = null;
   private readonly maxReconnectDelay = 60000;
 
@@ -260,6 +272,11 @@ export class AgentWireChannel implements Channel {
       case 'notifications/email/inbound': {
         const email = params as unknown as EmailNotification;
         if (email.status !== 'DELIVERED') return;
+        this.replyContexts.set(jid, {
+          type: 'email',
+          from: email.from,
+          subject: email.subject,
+        });
         const content = `[Email from ${email.from}]\nSubject: ${email.subject}\n\n${email.body}`;
         this.deliverMessage(jid, conn.handle, {
           id: email.emailId,
@@ -279,6 +296,10 @@ export class AgentWireChannel implements Channel {
       case 'notifications/sms/inbound': {
         const sms = params as unknown as SmsNotification;
         if (sms.status !== 'DELIVERED') return;
+        this.replyContexts.set(jid, {
+          type: sms.from === 'voice:web' ? 'talk' : 'sms',
+          from: sms.from,
+        });
         const mediaNote = sms.media?.length
           ? `\n[${sms.media.length} attachment(s): ${sms.media.map((m) => m.filename).join(', ')}]`
           : '';
@@ -301,6 +322,10 @@ export class AgentWireChannel implements Channel {
 
       case 'notifications/webhook/trigger': {
         const webhook = params as unknown as WebhookNotification;
+        this.replyContexts.set(jid, {
+          type: 'webhook',
+          from: 'webhook',
+        });
         this.deliverMessage(jid, conn.handle, {
           id: webhook.webhookId,
           chat_jid: jid,
@@ -352,6 +377,52 @@ export class AgentWireChannel implements Channel {
       return;
     }
 
+    const ctx = this.replyContexts.get(jid);
+    const trimmed = text.slice(0, 5000);
+
+    // Route email replies via /send-email endpoint
+    if (ctx?.type === 'email' && ctx.from) {
+      const rawSubject = ctx.subject || '(no subject)';
+      const replySubject = sanitizeHeader(
+        rawSubject.startsWith('Re:') ? rawSubject : `Re: ${rawSubject}`,
+      );
+      try {
+        const emailUrl = `${this.baseUrl}/api/agents/${handle}/send-email`;
+        const emailRes = await fetch(emailUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            to: ctx.from,
+            subject: replySubject,
+            body: trimmed,
+          }),
+        });
+
+        if (emailRes.ok) {
+          logger.info(
+            { handle, to: ctx.from, subject: replySubject },
+            'AgentWire email reply sent',
+          );
+          return;
+        }
+
+        const errBody = await emailRes.text().catch(() => '');
+        logger.warn(
+          { handle, status: emailRes.status, body: errBody.slice(0, 200) },
+          'AgentWire email send failed, falling back to talk page',
+        );
+      } catch (err) {
+        logger.warn(
+          { handle, err },
+          'AgentWire email send error, falling back to talk page',
+        );
+      }
+    }
+
+    // Default: post to talk page
     const url = `${this.baseUrl}/api/agents/${handle}/post`;
 
     try {
@@ -361,7 +432,7 @@ export class AgentWireChannel implements Channel {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ content: text.slice(0, 5000) }),
+        body: JSON.stringify({ content: trimmed }),
       });
 
       if (!response.ok) {
@@ -377,6 +448,11 @@ export class AgentWireChannel implements Channel {
     } catch (err) {
       logger.error({ handle, err }, 'Failed to post AgentWire message');
     }
+  }
+
+  /** Get the current reply context for a JID (used by container-runner) */
+  getReplyContext(jid: string): ReplyContext | undefined {
+    return this.replyContexts.get(jid);
   }
 
   isConnected(): boolean {
@@ -409,6 +485,7 @@ export class AgentWireChannel implements Channel {
     if (conn.reconnectTimer) clearTimeout(conn.reconnectTimer);
     conn.abortController.abort();
     this.connections.delete(jid);
+    this.replyContexts.delete(jid);
   }
 
   private scheduleReconnect(jid: string, conn: AgentSSEConnection): void {

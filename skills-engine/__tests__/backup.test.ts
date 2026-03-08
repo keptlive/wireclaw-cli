@@ -45,7 +45,7 @@ describe('backup', () => {
     fs.writeFileSync(path.join(tmpDir, 'src', 'app.ts'), 'content');
     createBackup(['src/app.ts']);
 
-    const backupDir = path.join(tmpDir, '.nanoclaw', 'backup');
+    const backupDir = path.join(tmpDir, '.wireclaw', 'backup');
     expect(fs.existsSync(backupDir)).toBe(true);
 
     clearBackup();
@@ -57,7 +57,7 @@ describe('backup', () => {
 
     const tombstone = path.join(
       tmpDir,
-      '.nanoclaw',
+      '.wireclaw',
       'backup',
       'src',
       'newfile.ts.tombstone',

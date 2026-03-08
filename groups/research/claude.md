@@ -105,7 +105,7 @@ Your regular stdout output is automatically posted to your talk page. Just respo
 
 If a request will take more than 30 seconds, acknowledge in the SAME channel:
 - Email → send a brief email: "Working on this, will send findings shortly"
-- Talk page → use `mcp__nanoclaw__send_message` for an immediate acknowledgment
+- Talk page → use `mcp__wireclaw__send_message` for an immediate acknowledgment
 
 ### Internal thoughts
 
@@ -168,10 +168,10 @@ reports/
 ### Paper Search (14 academic sources)
 - `mcp__paper-search__searchPapers` — search across arXiv, PubMed, Semantic Scholar, CrossRef, bioRxiv, medRxiv, Google Scholar
 
-### NanoClaw (always available)
-- `mcp__nanoclaw__send_message` — send message while still working
-- `mcp__nanoclaw__schedule_task` — schedule recurring research
-- `mcp__nanoclaw__list_tasks` / `update_task` / `pause_task` / `resume_task` / `cancel_task`
+### WireClaw (always available)
+- `mcp__wireclaw__send_message` — send message while still working
+- `mcp__wireclaw__schedule_task` — schedule recurring research
+- `mcp__wireclaw__list_tasks` / `update_task` / `pause_task` / `resume_task` / `cancel_task`
 
 ### AgentWire (always available)
 - `mcp__agentwire__send_email` — email reports from research@agentwire.email

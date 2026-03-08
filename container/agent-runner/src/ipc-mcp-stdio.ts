@@ -1,5 +1,5 @@
 /**
- * Stdio MCP Server for NanoClaw
+ * Stdio MCP Server for WireClaw
  * Standalone process that agent teams subagents can inherit.
  * Reads context from environment variables, writes IPC files for the host.
  */
@@ -16,9 +16,9 @@ const MESSAGES_DIR = path.join(IPC_DIR, 'messages');
 const TASKS_DIR = path.join(IPC_DIR, 'tasks');
 
 // Context from environment variables (set by the agent runner)
-const chatJid = process.env.NANOCLAW_CHAT_JID!;
-const groupFolder = process.env.NANOCLAW_GROUP_FOLDER!;
-const isMain = process.env.NANOCLAW_IS_MAIN === '1';
+const chatJid = process.env.WIRECLAW_CHAT_JID!;
+const groupFolder = process.env.WIRECLAW_GROUP_FOLDER!;
+const isMain = process.env.WIRECLAW_IS_MAIN === '1';
 
 function writeIpcFile(dir: string, data: object): string {
   fs.mkdirSync(dir, { recursive: true });
@@ -35,7 +35,7 @@ function writeIpcFile(dir: string, data: object): string {
 }
 
 const server = new McpServer({
-  name: 'nanoclaw',
+  name: 'wireclaw',
   version: '1.0.0',
 });
 
@@ -376,6 +376,40 @@ Handle rules: lowercase alphanumeric, hyphens, underscores. Regex: ^[a-z0-9][a-z
     return {
       content: [{ type: 'text' as const, text: `Agent "${args.handle}" creation requested. The host will validate the manifest from shared/manifests/${args.handle}/, copy to groups/${args.handle}/, and register at ${args.handle}@agentwire.email. Check logs for result.` }],
     };
+  },
+);
+
+// Reply context from environment (set by agent-runner based on inbound channel)
+const replyType = process.env.WIRECLAW_REPLY_TYPE || '';
+const replyFrom = process.env.WIRECLAW_REPLY_FROM || '';
+const replySubject = process.env.WIRECLAW_REPLY_SUBJECT || '';
+
+server.tool(
+  'reply',
+  `Send a reply that automatically routes to the channel the user contacted you from. If they emailed you, this replies by email. If they messaged on the talk page, this posts to the talk page. Use this instead of send_message when responding to a user's inbound message.
+
+Current reply context: ${replyType ? `type=${replyType}, from=${replyFrom}${replySubject ? `, subject=${replySubject}` : ''}` : 'none (will post to talk page)'}`,
+  {
+    text: z.string().describe('The reply text to send'),
+  },
+  async (args) => {
+    const data: Record<string, string> = {
+      type: 'reply',
+      chatJid,
+      text: args.text,
+      groupFolder,
+      replyType,
+      replyFrom,
+      replySubject,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(MESSAGES_DIR, data);
+
+    const routeDesc = replyType === 'email'
+      ? `email to ${replyFrom}`
+      : 'talk page';
+    return { content: [{ type: 'text' as const, text: `Reply sent via ${routeDesc}.` }] };
   },
 );
 

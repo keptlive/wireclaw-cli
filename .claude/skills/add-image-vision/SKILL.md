@@ -1,15 +1,15 @@
 ---
 name: add-image-vision
-description: Add image vision to NanoClaw agents. Resizes and processes WhatsApp image attachments, then sends them to Claude as multimodal content blocks.
+description: Add image vision to WireClaw agents. Resizes and processes WhatsApp image attachments, then sends them to Claude as multimodal content blocks.
 ---
 
 # Image Vision Skill
 
-Adds the ability for NanoClaw agents to see and understand images sent via WhatsApp. Images are downloaded, resized with sharp, saved to the group workspace, and passed to the agent as base64-encoded multimodal content blocks.
+Adds the ability for WireClaw agents to see and understand images sent via WhatsApp. Images are downloaded, resized with sharp, saved to the group workspace, and passed to the agent as base64-encoded multimodal content blocks.
 
 ## Phase 1: Pre-flight
 
-1. Check `.nanoclaw/state.yaml` for `add-image-vision` — skip if already applied
+1. Check `.wireclaw/state.yaml` for `add-image-vision` — skip if already applied
 2. Confirm `sharp` is installable (native bindings require build tools)
 
 ## Phase 2: Apply Code Changes
@@ -51,7 +51,7 @@ Adds the ability for NanoClaw agents to see and understand images sent via Whats
 
 3. Restart the service:
    ```bash
-   launchctl kickstart -k gui/$(id -u)/com.nanoclaw
+   launchctl kickstart -k gui/$(id -u)/com.wireclaw
    ```
 
 ## Phase 4: Verify

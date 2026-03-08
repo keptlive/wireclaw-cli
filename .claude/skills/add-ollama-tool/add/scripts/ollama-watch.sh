@@ -1,5 +1,5 @@
 #!/bin/bash
-# Watch NanoClaw IPC for Ollama activity and show macOS notifications
+# Watch WireClaw IPC for Ollama activity and show macOS notifications
 # Usage: ./scripts/ollama-watch.sh
 
 cd "$(dirname "$0")/.." || exit 1
@@ -25,11 +25,11 @@ while true; do
 
     case "$STATUS" in
       generating)
-        osascript -e "display notification \"$DETAIL\" with title \"NanoClaw → Ollama\" sound name \"Submarine\"" 2>/dev/null
+        osascript -e "display notification \"$DETAIL\" with title \"WireClaw → Ollama\" sound name \"Submarine\"" 2>/dev/null
         echo "$(date +%H:%M:%S) 🔄 $DETAIL"
         ;;
       done)
-        osascript -e "display notification \"$DETAIL\" with title \"NanoClaw ← Ollama ✓\" sound name \"Glass\"" 2>/dev/null
+        osascript -e "display notification \"$DETAIL\" with title \"WireClaw ← Ollama ✓\" sound name \"Glass\"" 2>/dev/null
         echo "$(date +%H:%M:%S) ✅ $DETAIL"
         ;;
       listing)

@@ -13,6 +13,7 @@ import {
   getChannelFactory,
   getRegisteredChannelNames,
 } from './channels/registry.js';
+import { readEnvFile } from './env.js';
 import {
   ContainerOutput,
   runContainerAgent,
@@ -44,6 +45,7 @@ import {
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
+import { AgentWireChannel } from './channels/agentwire.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
 import { applyManifest, discoverManifests, loadManifest } from './manifest.js';
 import {
@@ -203,36 +205,51 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }, IDLE_TIMEOUT);
   };
 
+  // Get reply context from AgentWire channel (if applicable)
+  const replyContext =
+    channel instanceof AgentWireChannel
+      ? channel.getReplyContext(chatJid)
+      : undefined;
+
   await channel.setTyping?.(chatJid, true);
   let hadError = false;
   let outputSentToUser = false;
 
-  const output = await runAgent(group, prompt, chatJid, async (result) => {
-    // Streaming output callback — called for each agent result
-    if (result.result) {
-      const raw =
-        typeof result.result === 'string'
-          ? result.result
-          : JSON.stringify(result.result);
-      // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
-      const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
-      logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
-      if (text) {
-        await channel.sendMessage(chatJid, text);
-        outputSentToUser = true;
+  const output = await runAgent(
+    group,
+    prompt,
+    chatJid,
+    async (result) => {
+      // Streaming output callback — called for each agent result
+      if (result.result) {
+        const raw =
+          typeof result.result === 'string'
+            ? result.result
+            : JSON.stringify(result.result);
+        // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
+        const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+        logger.info(
+          { group: group.name },
+          `Agent output: ${raw.slice(0, 200)}`,
+        );
+        if (text) {
+          await channel.sendMessage(chatJid, text);
+          outputSentToUser = true;
+        }
+        // Only reset idle timer on actual results, not session-update markers (result: null)
+        resetIdleTimer();
       }
-      // Only reset idle timer on actual results, not session-update markers (result: null)
-      resetIdleTimer();
-    }
 
-    if (result.status === 'success') {
-      queue.notifyIdle(chatJid);
-    }
+      if (result.status === 'success') {
+        queue.notifyIdle(chatJid);
+      }
 
-    if (result.status === 'error') {
-      hadError = true;
-    }
-  });
+      if (result.status === 'error') {
+        hadError = true;
+      }
+    },
+    replyContext,
+  );
 
   await channel.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
@@ -265,6 +282,7 @@ async function runAgent(
   prompt: string,
   chatJid: string,
   onOutput?: (output: ContainerOutput) => Promise<void>,
+  replyContext?: { type: string; from: string; subject?: string },
 ): Promise<'success' | 'error'> {
   const isMain = group.isMain === true;
   const sessionId = sessions[group.folder];
@@ -315,6 +333,7 @@ async function runAgent(
         chatJid,
         isMain,
         assistantName: ASSISTANT_NAME,
+        replyContext,
       },
       (proc, containerName) =>
         queue.registerProcess(chatJid, proc, containerName, group.folder),
@@ -348,7 +367,7 @@ async function startMessageLoop(): Promise<void> {
   }
   messageLoopRunning = true;
 
-  logger.info(`NanoClaw running (trigger: @${ASSISTANT_NAME})`);
+  logger.info(`WireClaw running (trigger: @${ASSISTANT_NAME})`);
 
   while (true) {
     try {
@@ -581,6 +600,46 @@ async function main(): Promise<void> {
       if (!channel) throw new Error(`No channel for JID: ${jid}`);
       return channel.sendMessage(jid, text);
     },
+    sendEmailReply: (() => {
+      // Cache credentials at startup (avoid re-reading .env on every call)
+      const envVars = readEnvFile(['AGENTWIRE_API_KEY', 'AGENTWIRE_URL']);
+      const apiKey =
+        process.env.AGENTWIRE_API_KEY || envVars.AGENTWIRE_API_KEY || '';
+      const baseUrl =
+        process.env.AGENTWIRE_URL ||
+        envVars.AGENTWIRE_URL ||
+        'https://agentwire.run';
+      return async (
+        handle: string,
+        to: string,
+        subject: string,
+        body: string,
+      ) => {
+        try {
+          const res = await fetch(
+            `${baseUrl}/api/agents/${handle}/send-email`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ to, subject, body }),
+            },
+          );
+          return res.ok;
+        } catch (err) {
+          logger.error({ handle, to, err }, 'sendEmailReply failed');
+          return false;
+        }
+      };
+    })(),
+    getReplyContext: (jid: string) => {
+      const awChannel = channels.find(
+        (ch): ch is AgentWireChannel => ch instanceof AgentWireChannel,
+      );
+      return awChannel?.getReplyContext(jid);
+    },
     registeredGroups: () => registeredGroups,
     registerGroup,
     syncGroups: async (force: boolean) => {
@@ -610,7 +669,7 @@ const isDirectRun =
 
 if (isDirectRun) {
   main().catch((err) => {
-    logger.error({ err }, 'Failed to start NanoClaw');
+    logger.error({ err }, 'Failed to start WireClaw');
     process.exit(1);
   });
 }

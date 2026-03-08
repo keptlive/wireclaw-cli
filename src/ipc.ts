@@ -20,6 +20,8 @@ import {
   setManifestHash,
   updateTask,
 } from './db.js';
+import { AW_JID_PREFIX, sanitizeHeader } from './channels/agentwire.js';
+import type { ReplyContext } from './channels/agentwire.js';
 import { readEnvFile } from './env.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
@@ -73,6 +75,13 @@ async function createAgentWireAgent(
 
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
+  sendEmailReply: (
+    handle: string,
+    to: string,
+    subject: string,
+    body: string,
+  ) => Promise<boolean>;
+  getReplyContext: (jid: string) => ReplyContext | undefined;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroups: (force: boolean) => Promise<void>;
@@ -150,6 +159,89 @@ export function startIpcWatcher(deps: IpcDeps): void {
                   logger.warn(
                     { chatJid: data.chatJid, sourceGroup },
                     'Unauthorized IPC message attempt blocked',
+                  );
+                }
+              } else if (data.type === 'reply' && data.chatJid && data.text) {
+                // Authorization: same as message
+                const targetGroup = registeredGroups[data.chatJid];
+                if (
+                  isMain ||
+                  (targetGroup && targetGroup.folder === sourceGroup)
+                ) {
+                  // Validate reply context against host-stored state (prevent forgery)
+                  const storedCtx = deps.getReplyContext(data.chatJid);
+
+                  if (
+                    data.replyType === 'email' &&
+                    storedCtx?.type === 'email' &&
+                    storedCtx.from === data.replyFrom
+                  ) {
+                    // Validated: container's claim matches host's stored context
+                    const handle = data.chatJid.startsWith(AW_JID_PREFIX)
+                      ? data.chatJid.slice(AW_JID_PREFIX.length)
+                      : '';
+                    const rawSubject =
+                      data.replySubject || storedCtx.subject || '(no subject)';
+                    const subject = sanitizeHeader(
+                      rawSubject.startsWith('Re:')
+                        ? rawSubject
+                        : `Re: ${rawSubject}`,
+                    );
+                    const to = sanitizeHeader(data.replyFrom);
+                    if (handle) {
+                      const sent = await deps.sendEmailReply(
+                        handle,
+                        to,
+                        subject,
+                        data.text,
+                      );
+                      if (sent) {
+                        logger.info(
+                          { handle, to, sourceGroup },
+                          'IPC reply sent via email',
+                        );
+                      } else {
+                        // Fallback to talk page
+                        await deps.sendMessage(data.chatJid, data.text);
+                        logger.warn(
+                          { handle, to, sourceGroup },
+                          'IPC email reply failed, fell back to talk page',
+                        );
+                      }
+                    } else {
+                      await deps.sendMessage(data.chatJid, data.text);
+                    }
+                  } else if (
+                    data.replyType === 'email' &&
+                    storedCtx?.type !== 'email'
+                  ) {
+                    // Container claims email but host has no email context — reject forgery
+                    logger.warn(
+                      {
+                        chatJid: data.chatJid,
+                        sourceGroup,
+                        claimedType: data.replyType,
+                        actualType: storedCtx?.type,
+                      },
+                      'IPC reply context mismatch (email claim rejected), routing to talk page',
+                    );
+                    await deps.sendMessage(data.chatJid, data.text);
+                  } else {
+                    // Non-email reply: route to talk page / channel
+                    await deps.sendMessage(data.chatJid, data.text);
+                    logger.info(
+                      {
+                        chatJid: data.chatJid,
+                        sourceGroup,
+                        replyType: data.replyType,
+                      },
+                      'IPC reply sent via channel',
+                    );
+                  }
+                } else {
+                  logger.warn(
+                    { chatJid: data.chatJid, sourceGroup },
+                    'Unauthorized IPC reply attempt blocked',
                   );
                 }
               }

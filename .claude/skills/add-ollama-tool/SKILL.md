@@ -15,7 +15,7 @@ Tools added:
 
 ### Check if already applied
 
-Read `.nanoclaw/state.yaml`. If `ollama` is in `applied_skills`, skip to Phase 3 (Configure). The code changes are already in place.
+Read `.wireclaw/state.yaml`. If `ollama` is in `applied_skills`, skip to Phase 3 (Configure). The code changes are already in place.
 
 ### Check prerequisites
 
@@ -43,7 +43,7 @@ Run the skills engine to apply this skill's code package.
 
 ### Initialize skills system (if needed)
 
-If `.nanoclaw/` directory doesn't exist yet:
+If `.wireclaw/` directory doesn't exist yet:
 
 ```bash
 npx tsx scripts/apply-skill.ts --init
@@ -60,7 +60,7 @@ This deterministically:
 - Adds `scripts/ollama-watch.sh` (macOS notification watcher)
 - Three-way merges Ollama MCP config into `container/agent-runner/src/index.ts` (allowedTools + mcpServers)
 - Three-way merges `[OLLAMA]` log surfacing into `src/container-runner.ts`
-- Records the application in `.nanoclaw/state.yaml`
+- Records the application in `.wireclaw/state.yaml`
 
 If the apply reports merge conflicts, read the intent files:
 - `modify/container/agent-runner/src/index.ts.intent.md` — what changed and invariants
@@ -99,8 +99,8 @@ OLLAMA_HOST=http://your-ollama-host:11434
 ### Restart the service
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.nanoclaw  # macOS
-# Linux: systemctl --user restart nanoclaw
+launchctl kickstart -k gui/$(id -u)/com.wireclaw  # macOS
+# Linux: systemctl --user restart wireclaw
 ```
 
 ## Phase 4: Verify
@@ -124,7 +124,7 @@ Run the watcher script for macOS notifications when Ollama is used:
 ### Check logs if needed
 
 ```bash
-tail -f logs/nanoclaw.log | grep -i ollama
+tail -f logs/wireclaw.log | grep -i ollama
 ```
 
 Look for:

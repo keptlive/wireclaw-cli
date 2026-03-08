@@ -5,7 +5,7 @@ description: Create a new WireClaw agent with YAML manifest and system prompt. U
 
 # Agent Builder
 
-Create fully configured WireClaw agents through a research-driven workflow. This skill is for admin agents with access to the NanoClaw project directory.
+Create fully configured WireClaw agents through a research-driven workflow. This skill is for admin agents with access to the WireClaw project directory.
 
 ## Step 1: Ask the User
 
@@ -44,7 +44,7 @@ Check `/workspace/project/container/skills/` for available container skills. Rea
 ### B: MCP Servers & Dependencies
 
 The agent automatically gets these (NEVER add them to yaml):
-- **nanoclaw**: send_message, schedule_task, list_tasks, update_task, pause_task, resume_task, cancel_task, register_group
+- **wireclaw**: send_message, schedule_task, list_tasks, update_task, pause_task, resume_task, cancel_task, register_group
 - **agentwire**: send_email, list_emails, read_email, read_email_html, get_attachment, invite_contact, list_contacts, update_contact, unblock_contact, list_sms, read_sms, post_message, set_messages_password, add_sms_sender, remove_sms_sender, list_sms_senders, get_agent_notes, set_agent_notes, get_usage, deploy_agent_spa, search_memory, remember, forget, get_recent_context, memory_stats
 
 Research what ADDITIONAL MCP servers would help. For each:
@@ -216,7 +216,7 @@ You are {Agent Name}, {role description}. {Personality sentence}.
 
 Your output is sent to the user or group.
 
-Use `mcp__nanoclaw__send_message` for quick acknowledgments before long tasks.
+Use `mcp__wireclaw__send_message` for quick acknowledgments before long tasks.
 
 ### Internal thoughts
 
@@ -238,11 +238,11 @@ This is the most important section. Make it specific, not generic.}
 
 ## Tools Reference
 
-### NanoClaw (always available)
-- `mcp__nanoclaw__send_message` — send message while still running
-- `mcp__nanoclaw__schedule_task` — create cron/interval/one-time tasks
-- `mcp__nanoclaw__list_tasks` — view scheduled tasks
-- `mcp__nanoclaw__update_task` / `pause_task` / `resume_task` / `cancel_task`
+### WireClaw (always available)
+- `mcp__wireclaw__send_message` — send message while still running
+- `mcp__wireclaw__schedule_task` — create cron/interval/one-time tasks
+- `mcp__wireclaw__list_tasks` — view scheduled tasks
+- `mcp__wireclaw__update_task` / `pause_task` / `resume_task` / `cancel_task`
 
 ### AgentWire (always available)
 - `mcp__agentwire__send_email` — send from {handle}@agentwire.email
@@ -271,10 +271,10 @@ When you learn something important:
 
 ## Step 8: Apply
 
-Use the `mcp__nanoclaw__create_agent` tool with the handle:
+Use the `mcp__wireclaw__create_agent` tool with the handle:
 
 ```
-mcp__nanoclaw__create_agent({ handle: "{handle}" })
+mcp__wireclaw__create_agent({ handle: "{handle}" })
 ```
 
 This tells the host to:

@@ -1,4 +1,4 @@
-# NanoClaw
+# WireClaw
 
 Personal Claude assistant. See [README.md](README.md) for philosophy and setup. See [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) for architecture decisions.
 
@@ -28,7 +28,7 @@ Single Node.js process with skill-based channel system. Channels (WhatsApp, Tele
 | `/setup` | First-time installation, authentication, service configuration |
 | `/customize` | Adding channels, integrations, changing behavior |
 | `/debug` | Container issues, logs, troubleshooting |
-| `/update-nanoclaw` | Bring upstream NanoClaw updates into a customized install |
+| `/update-wireclaw` | Bring upstream WireClaw updates into a customized install |
 | `/qodo-pr-resolver` | Fetch and fix Qodo PR review issues interactively or in batch |
 | `/get-qodo-rules` | Load org- and repo-level coding rules from Qodo before code tasks |
 
@@ -45,14 +45,14 @@ npm run build        # Compile TypeScript
 Service management:
 ```bash
 # macOS (launchd)
-launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist
-launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist
-launchctl kickstart -k gui/$(id -u)/com.nanoclaw  # restart
+launchctl load ~/Library/LaunchAgents/com.wireclaw.plist
+launchctl unload ~/Library/LaunchAgents/com.wireclaw.plist
+launchctl kickstart -k gui/$(id -u)/com.wireclaw  # restart
 
 # Linux (systemd)
-systemctl --user start nanoclaw
-systemctl --user stop nanoclaw
-systemctl --user restart nanoclaw
+systemctl --user start wireclaw
+systemctl --user stop wireclaw
+systemctl --user restart wireclaw
 ```
 
 ## Troubleshooting

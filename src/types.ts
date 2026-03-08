@@ -6,7 +6,7 @@ export interface AdditionalMount {
 
 /**
  * Mount Allowlist - Security configuration for additional mounts
- * This file should be stored at ~/.config/nanoclaw/mount-allowlist.json
+ * This file should be stored at ~/.config/wireclaw/mount-allowlist.json
  * and is NOT mounted into any container, making it tamper-proof from agents.
  */
 export interface MountAllowlist {
@@ -30,7 +30,7 @@ export interface AllowedRoot {
 export interface McpServerConfig {
   command?: string;
   args?: string[];
-  type?: 'sse' | 'stdio';
+  type?: 'sse' | 'http' | 'streamable-http' | 'stdio';
   url?: string;
   headers?: Record<string, string>;
   env?: Record<string, string>; // values like "$GITHUB_TOKEN" resolved at runtime

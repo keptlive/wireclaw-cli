@@ -1,9 +1,9 @@
 ---
 name: setup
-description: Run initial NanoClaw setup. Use when user wants to install dependencies, authenticate messaging channels, register their main channel, or start the background services. Triggers on "setup", "install", "configure nanoclaw", or first-time setup requests.
+description: Run initial WireClaw setup. Use when user wants to install dependencies, authenticate messaging channels, register their main channel, or start the background services. Triggers on "setup", "install", "configure wireclaw", or first-time setup requests.
 ---
 
-# NanoClaw Setup
+# WireClaw Setup
 
 Run setup steps automatically. Only pause when user action is required (channel authentication, configuration choices). Setup uses `bash setup.sh` for bootstrap, then `npx tsx setup/index.ts --step <name>` for all other steps. Steps emit structured status blocks to stdout. Verbose logs go to `logs/setup.log`.
 
@@ -119,12 +119,12 @@ AskUserQuestion: Agent access to external directories?
 ## 7. Start Service
 
 If service already running: unload first.
-- macOS: `launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist`
-- Linux: `systemctl --user stop nanoclaw` (or `systemctl stop nanoclaw` if root)
+- macOS: `launchctl unload ~/Library/LaunchAgents/com.wireclaw.plist`
+- Linux: `systemctl --user stop wireclaw` (or `systemctl stop wireclaw` if root)
 
 Run `npx tsx setup/index.ts --step service` and parse the status block.
 
-**If FALLBACK=wsl_no_systemd:** WSL without systemd detected. Tell user they can either enable systemd in WSL (`echo -e "[boot]\nsystemd=true" | sudo tee /etc/wsl.conf` then restart WSL) or use the generated `start-nanoclaw.sh` wrapper.
+**If FALLBACK=wsl_no_systemd:** WSL without systemd detected. Tell user they can either enable systemd in WSL (`echo -e "[boot]\nsystemd=true" | sudo tee /etc/wsl.conf` then restart WSL) or use the generated `start-wireclaw.sh` wrapper.
 
 **If DOCKER_GROUP_STALE=true:** The user was added to the docker group after their session started — the systemd service can't reach the Docker socket. Ask user to run these two commands:
 
@@ -142,8 +142,8 @@ Replace `USERNAME` with the actual username (from `whoami`). Run the two `sudo` 
 
 **If SERVICE_LOADED=false:**
 - Read `logs/setup.log` for the error.
-- macOS: check `launchctl list | grep nanoclaw`. If PID=`-` and status non-zero, read `logs/nanoclaw.error.log`.
-- Linux: check `systemctl --user status nanoclaw`.
+- macOS: check `launchctl list | grep wireclaw`. If PID=`-` and status non-zero, read `logs/wireclaw.error.log`.
+- Linux: check `systemctl --user status wireclaw`.
 - Re-run the service step after fixing.
 
 ## 8. Verify
@@ -151,23 +151,23 @@ Replace `USERNAME` with the actual username (from `whoami`). Run the two `sudo` 
 Run `npx tsx setup/index.ts --step verify` and parse the status block.
 
 **If STATUS=failed, fix each:**
-- SERVICE=stopped → `npm run build`, then restart: `launchctl kickstart -k gui/$(id -u)/com.nanoclaw` (macOS) or `systemctl --user restart nanoclaw` (Linux) or `bash start-nanoclaw.sh` (WSL nohup)
+- SERVICE=stopped → `npm run build`, then restart: `launchctl kickstart -k gui/$(id -u)/com.wireclaw` (macOS) or `systemctl --user restart wireclaw` (Linux) or `bash start-wireclaw.sh` (WSL nohup)
 - SERVICE=not_found → re-run step 7
 - CREDENTIALS=missing → re-run step 4
 - CHANNEL_AUTH shows `not_found` for any channel → re-invoke that channel's skill (e.g. `/add-telegram`)
 - REGISTERED_GROUPS=0 → re-invoke the channel skills from step 5
 - MOUNT_ALLOWLIST=missing → `npx tsx setup/index.ts --step mounts -- --empty`
 
-Tell user to test: send a message in their registered chat. Show: `tail -f logs/nanoclaw.log`
+Tell user to test: send a message in their registered chat. Show: `tail -f logs/wireclaw.log`
 
 ## Troubleshooting
 
-**Service not starting:** Check `logs/nanoclaw.error.log`. Common: wrong Node path (re-run step 7), missing `.env` (step 4), missing channel credentials (re-invoke channel skill).
+**Service not starting:** Check `logs/wireclaw.error.log`. Common: wrong Node path (re-run step 7), missing `.env` (step 4), missing channel credentials (re-invoke channel skill).
 
 **Container agent fails ("Claude Code process exited with code 1"):** Ensure the container runtime is running — `open -a Docker` (macOS Docker), `container system start` (Apple Container), or `sudo systemctl start docker` (Linux). Check container logs in `groups/main/logs/container-*.log`.
 
-**No response to messages:** Check trigger pattern. Main channel doesn't need prefix. Check DB: `npx tsx setup/index.ts --step verify`. Check `logs/nanoclaw.log`.
+**No response to messages:** Check trigger pattern. Main channel doesn't need prefix. Check DB: `npx tsx setup/index.ts --step verify`. Check `logs/wireclaw.log`.
 
 **Channel not connecting:** Verify the channel's credentials are set in `.env`. Channels auto-enable when their credentials are present. For WhatsApp: check `store/auth/creds.json` exists. For token-based channels: check token values in `.env`. Restart the service after any `.env` change.
 
-**Unload service:** macOS: `launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist` | Linux: `systemctl --user stop nanoclaw`
+**Unload service:** macOS: `launchctl unload ~/Library/LaunchAgents/com.wireclaw.plist` | Linux: `systemctl --user stop wireclaw`

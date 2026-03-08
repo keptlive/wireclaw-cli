@@ -4,7 +4,7 @@
  *
  * For each skill:
  *   1. Reset working tree to clean state
- *   2. Initialize .nanoclaw/ (snapshot current source as base)
+ *   2. Initialize .wireclaw/ (snapshot current source as base)
  *   3. Apply skill via apply-skill.ts
  *   4. Run tsc --noEmit (typecheck)
  *   5. Run the skill's test command (from manifest.yaml)
@@ -64,8 +64,8 @@ function resetWorkingTree(): void {
   // but preserve node_modules to avoid costly reinstalls.
   execSync('git clean -fd --exclude=node_modules', { stdio: 'pipe' });
   // Clean skills-system state directory
-  if (fs.existsSync('.nanoclaw')) {
-    fs.rmSync('.nanoclaw', { recursive: true, force: true });
+  if (fs.existsSync('.wireclaw')) {
+    fs.rmSync('.wireclaw', { recursive: true, force: true });
   }
 }
 

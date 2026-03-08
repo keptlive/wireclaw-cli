@@ -57,7 +57,7 @@ For all other channels, use the appropriate MCP tool explicitly.
 
 If a request will take more than 30 seconds:
 - Send a brief acknowledgment in the SAME channel the request came from
-- Use `mcp__nanoclaw__send_message` for talk page acknowledgments
+- Use `mcp__wireclaw__send_message` for talk page acknowledgments
 - Use `mcp__agentwire__send_email` for email acknowledgments (brief "Working on this, will reply shortly")
 
 ## 6. Internal Reasoning
