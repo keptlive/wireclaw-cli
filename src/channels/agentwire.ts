@@ -73,11 +73,7 @@ export class AgentWireChannel implements Channel {
   private syncInterval: ReturnType<typeof setInterval> | null = null;
   private readonly maxReconnectDelay = 60000;
 
-  constructor(
-    apiKey: string,
-    baseUrl: string,
-    opts: ChannelOpts,
-  ) {
+  constructor(apiKey: string, baseUrl: string, opts: ChannelOpts) {
     this.apiKey = apiKey;
     this.baseUrl = baseUrl;
     this.opts = opts;
@@ -127,14 +123,20 @@ export class AgentWireChannel implements Channel {
       };
       this.connections.set(jid, conn);
 
-      logger.info({ handle, agentId: group.agentwireAgentId }, 'Connecting SSE for agent');
+      logger.info(
+        { handle, agentId: group.agentwireAgentId },
+        'Connecting SSE for agent',
+      );
       this.startSSE(jid, conn);
     }
 
     // Disconnect agents that are no longer registered
     for (const [jid, conn] of this.connections) {
       if (!activeJids.has(jid)) {
-        logger.info({ handle: conn.handle }, 'Disconnecting SSE for removed agent');
+        logger.info(
+          { handle: conn.handle },
+          'Disconnecting SSE for removed agent',
+        );
         this.disconnectAgent(jid);
       }
     }
@@ -212,7 +214,11 @@ export class AgentWireChannel implements Channel {
     }
   }
 
-  private handleSSEEvent(jid: string, conn: AgentSSEConnection, raw: string): void {
+  private handleSSEEvent(
+    jid: string,
+    conn: AgentSSEConnection,
+    raw: string,
+  ): void {
     const lines = raw.split('\n');
     let eventType = 'message';
     let data = '';
@@ -286,7 +292,10 @@ export class AgentWireChannel implements Channel {
           content,
           timestamp,
         });
-        logger.info({ handle: conn.handle, from: sms.from }, 'AgentWire message received');
+        logger.info(
+          { handle: conn.handle, from: sms.from },
+          'AgentWire message received',
+        );
         break;
       }
 
@@ -305,7 +314,10 @@ export class AgentWireChannel implements Channel {
       }
 
       default:
-        logger.debug({ method, handle: conn.handle }, 'AgentWire: unhandled notification');
+        logger.debug(
+          { method, handle: conn.handle },
+          'AgentWire: unhandled notification',
+        );
     }
   }
 
@@ -404,8 +416,14 @@ export class AgentWireChannel implements Channel {
     if (conn.reconnectTimer) clearTimeout(conn.reconnectTimer);
 
     const jitter = Math.random() * 1000;
-    const delay = Math.min(conn.reconnectDelay + jitter, this.maxReconnectDelay);
-    conn.reconnectDelay = Math.min(conn.reconnectDelay * 2, this.maxReconnectDelay);
+    const delay = Math.min(
+      conn.reconnectDelay + jitter,
+      this.maxReconnectDelay,
+    );
+    conn.reconnectDelay = Math.min(
+      conn.reconnectDelay * 2,
+      this.maxReconnectDelay,
+    );
 
     // Create a new abort controller for the reconnection
     conn.abortController = new AbortController();
@@ -423,7 +441,9 @@ registerChannel('agentwire', (opts: ChannelOpts) => {
   const apiKey =
     process.env.AGENTWIRE_API_KEY || envVars.AGENTWIRE_API_KEY || '';
   const baseUrl =
-    process.env.AGENTWIRE_URL || envVars.AGENTWIRE_URL || 'https://agentwire.run';
+    process.env.AGENTWIRE_URL ||
+    envVars.AGENTWIRE_URL ||
+    'https://agentwire.run';
 
   if (!apiKey) {
     return null;

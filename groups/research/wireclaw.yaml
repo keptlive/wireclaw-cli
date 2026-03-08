@@ -1,0 +1,37 @@
+version: "1.0"
+
+identity:
+  group_name: "Research"
+  handle: "research"
+  description: "Deep research agent with maximal data reach — academic papers, business intelligence, people search, data analysis, and web investigation"
+
+context:
+  system_prompt: "./claude.md"
+  model: "claude-sonnet-4-6"
+
+dependencies:
+  env_vars:
+    - AGENTWIRE_API_KEY
+    - TAVILY_API_KEY
+    - SEMANTIC_SCHOLAR_API_KEY
+
+  mcp_servers:
+    tavily:
+      command: "npx"
+      args: ["-y", "tavily-mcp@latest"]
+      env:
+        TAVILY_API_KEY: "$TAVILY_API_KEY"
+    paper-search:
+      command: "npx"
+      args: ["-y", "paper-search-mcp-nodejs"]
+      env:
+        SEMANTIC_SCHOLAR_API_KEY: "$SEMANTIC_SCHOLAR_API_KEY"
+
+container:
+  timeout: 600000
+
+skills:
+  - agent-browser
+  - deep-research
+  - academic-research
+  - data-analysis

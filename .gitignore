@@ -10,14 +10,20 @@ data/
 shared/
 logs/
 
-# Groups - only track base structure and specific CLAUDE.md files
+# Groups - only track prompts, manifests, and global rules
 groups/*
 !groups/main/
 !groups/global/
+!groups/research/
 groups/main/*
 groups/global/*
+groups/research/*
 !groups/main/CLAUDE.md
+!groups/main/wireclaw.yaml
 !groups/global/CLAUDE.md
+!groups/global/wireclaw-rules.md
+!groups/research/claude.md
+!groups/research/wireclaw.yaml
 
 # Secrets
 *.keys.json
