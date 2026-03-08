@@ -184,7 +184,17 @@ export function manifestToRegisteredGroup(
   // isMain is derived from ASSISTANT_NAME, not declared in the manifest.
   // This prevents a rogue manifest from bypassing trigger requirements.
   const assistantName = opts.assistantName || '';
-  const isMain = assistantName !== '' && handle.toLowerCase() === assistantName.toLowerCase();
+  const isMain =
+    assistantName !== '' &&
+    handle.toLowerCase() === assistantName.toLowerCase();
+
+  // AgentWire agents each have their own identity (email, talk page, SSE),
+  // so they receive only their own messages — no trigger needed.
+  // Shared-channel agents (WhatsApp, Telegram) default to requiring triggers.
+  const isAgentWire =
+    !manifest.channel_binding?.jid || jid.startsWith('agentwire:');
+  const requiresTrigger =
+    manifest.channel_binding?.requires_trigger ?? !isAgentWire;
 
   const group: RegisteredGroup = {
     name: manifest.identity.group_name,
@@ -201,7 +211,7 @@ export function manifestToRegisteredGroup(
       mcpServers,
       envVars: manifest.dependencies?.env_vars,
     },
-    requiresTrigger: manifest.channel_binding?.requires_trigger ?? true,
+    requiresTrigger,
     isMain,
     agentwireAgentId: opts.agentwireAgentId,
     model: manifest.context?.model,
@@ -250,7 +260,11 @@ async function createAgentWireAgent(
     const err = (await res.json()) as { error: string };
     if (res.status === 409 || err.error?.toLowerCase().includes('taken')) {
       // Handle taken — check if it belongs to us
-      const existing = await lookupOwnedAgent(handle, url, headers.Authorization);
+      const existing = await lookupOwnedAgent(
+        handle,
+        url,
+        headers.Authorization,
+      );
       if (existing) {
         logger.info(
           { handle, agentId: existing },
