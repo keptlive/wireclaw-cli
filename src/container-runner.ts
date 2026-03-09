@@ -208,12 +208,19 @@ function buildVolumeMounts(
   // Claude Code stores auto-memory at ~/.claude/projects/{path-hash}/memory/MEMORY.md
   // where {path-hash} is the cwd with slashes replaced by dashes.
   // Container cwd is /workspace/group → hash is -workspace-group
-  const memoryDir = path.join(groupSessionsDir, 'projects', '-workspace-group', 'memory');
+  const memoryDir = path.join(
+    groupSessionsDir,
+    'projects',
+    '-workspace-group',
+    'memory',
+  );
   fs.mkdirSync(memoryDir, { recursive: true });
   ensureContainerWritable(memoryDir);
   // Also chown intermediate dirs
   ensureContainerWritable(path.join(groupSessionsDir, 'projects'));
-  ensureContainerWritable(path.join(groupSessionsDir, 'projects', '-workspace-group'));
+  ensureContainerWritable(
+    path.join(groupSessionsDir, 'projects', '-workspace-group'),
+  );
   const memoryFile = path.join(memoryDir, 'MEMORY.md');
   if (!fs.existsSync(memoryFile)) {
     // Read identity from manifest if available
@@ -231,7 +238,9 @@ function buildVolumeMounts(
         if (handleMatch) {
           identity += `Email: ${handleMatch[1].trim()}@agentwire.email\n`;
         }
-      } catch { /* Best-effort */ }
+      } catch {
+        /* Best-effort */
+      }
     }
     identity += `\nThis is your persistent memory. Add important learnings here.\n`;
     fs.writeFileSync(memoryFile, identity);

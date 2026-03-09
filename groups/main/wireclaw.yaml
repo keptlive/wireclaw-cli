@@ -14,3 +14,4 @@ container:
 skills:
   - agent-builder
   - agent-browser
+  - skill-creator

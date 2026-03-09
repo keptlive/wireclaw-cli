@@ -445,6 +445,51 @@ Handle rules: lowercase alphanumeric, hyphens, underscores. Regex: ^[a-z0-9][a-z
   },
 );
 
+server.tool(
+  'deploy_skill',
+  `Deploy a skill to the host's container/skills/ directory so all agents can use it. Main group only.
+
+Before calling this tool, write the skill files to /workspace/shared/skills/{skill_name}/:
+1. /workspace/shared/skills/{skill_name}/SKILL.md — the skill file (required)
+2. Any bundled resources (scripts/, references/, agents/, assets/)
+
+Then call this tool with the skill_name. The host will copy it to container/skills/.
+After deployment, assign it to agents using manage_skills.`,
+  {
+    skill_name: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/).describe('Skill name (kebab-case, e.g. "data-analyzer")'),
+  },
+  async (args) => {
+    if (!isMain) {
+      return {
+        content: [{ type: 'text' as const, text: 'Only the main group can deploy skills.' }],
+        isError: true,
+      };
+    }
+
+    // Verify skill files exist
+    const skillDir = `/workspace/shared/skills/${args.skill_name}`;
+    const skillMd = `${skillDir}/SKILL.md`;
+    if (!fs.existsSync(skillMd)) {
+      return {
+        content: [{ type: 'text' as const, text: `SKILL.md not found at ${skillMd}. Write the skill files there first, then call this tool.` }],
+        isError: true,
+      };
+    }
+
+    const data = {
+      type: 'deploy_skill',
+      skill_name: args.skill_name,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(TASKS_DIR, data);
+
+    return {
+      content: [{ type: 'text' as const, text: `Skill "${args.skill_name}" deployment requested. The host will copy it from shared/skills/${args.skill_name}/ to container/skills/. Use manage_skills to assign it to specific agents.` }],
+    };
+  },
+);
+
 // Reply context from environment (set by agent-runner based on inbound channel)
 const replyType = process.env.WIRECLAW_REPLY_TYPE || '';
 const replyFrom = process.env.WIRECLAW_REPLY_FROM || '';

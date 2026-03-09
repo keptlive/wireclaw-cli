@@ -23,7 +23,10 @@ import {
 import { AW_JID_PREFIX, sanitizeHeader } from './channels/agentwire.js';
 import type { ReplyContext } from './channels/agentwire.js';
 import { readEnvFile } from './env.js';
-import { isValidGroupFolder } from './group-folder.js';
+import {
+  isValidGroupFolder,
+  resolveGroupFolderPath,
+} from './group-folder.js';
 import { logger } from './logger.js';
 import { applyManifest } from './manifest.js';
 import { RegisteredGroup } from './types.js';
@@ -331,6 +334,9 @@ export async function processTaskIpc(
     system_prompt?: string;
     // For update_skills
     skills?: string[];
+    // For deploy_skill
+    skill_name?: string;
+    source_path?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -706,6 +712,55 @@ export async function processTaskIpc(
         logger.warn(
           { handle: data.handle },
           'create_agent: invalid or missing handle',
+        );
+      }
+      break;
+
+    case 'deploy_skill':
+      // Main only: copy a skill from shared workspace to container/skills/
+      if (!isMain) {
+        logger.warn(
+          { sourceGroup },
+          'Unauthorized deploy_skill attempt blocked',
+        );
+        break;
+      }
+
+      if (data.skill_name && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(data.skill_name)) {
+        // Look for skill in shared workspace first, then group workspace
+        const sharedSkillDir = path.join(SHARED_DIR, 'skills', data.skill_name);
+        const groupSkillDir = data.source_path
+          ? path.join(resolveGroupFolderPath(sourceGroup), path.basename(data.source_path))
+          : null;
+        const sourceDir = fs.existsSync(sharedSkillDir)
+          ? sharedSkillDir
+          : groupSkillDir && fs.existsSync(groupSkillDir)
+            ? groupSkillDir
+            : null;
+
+        if (!sourceDir || !fs.existsSync(path.join(sourceDir, 'SKILL.md'))) {
+          logger.warn(
+            { skill_name: data.skill_name },
+            'deploy_skill: SKILL.md not found in source directory',
+          );
+          break;
+        }
+
+        const targetDir = path.join(
+          process.cwd(),
+          'container',
+          'skills',
+          data.skill_name,
+        );
+        fs.cpSync(sourceDir, targetDir, { recursive: true });
+        logger.info(
+          { skill_name: data.skill_name, src: sourceDir, dst: targetDir },
+          'deploy_skill: skill deployed to container/skills/',
+        );
+      } else {
+        logger.warn(
+          { skill_name: data.skill_name },
+          'deploy_skill: invalid or missing skill_name',
         );
       }
       break;
