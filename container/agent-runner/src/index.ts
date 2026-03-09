@@ -313,6 +313,7 @@ function shouldClose(): boolean {
 /**
  * Drain all pending IPC input messages.
  * Returns messages found, or empty array.
+ * Supports type: 'message' (user text) and type: 'reminder' (system guidance).
  */
 function drainIpcInput(): string[] {
   try {
@@ -329,6 +330,10 @@ function drainIpcInput(): string[] {
         fs.unlinkSync(filePath);
         if (data.type === 'message' && data.text) {
           messages.push(data.text);
+        } else if (data.type === 'reminder' && data.text) {
+          const category = data.category || 'general';
+          log(`System reminder injected: category=${category}`);
+          messages.push(`<system-reminder category="${category}">\n${data.text}\n</system-reminder>`);
         }
       } catch (err) {
         log(`Failed to process input file ${file}: ${err instanceof Error ? err.message : String(err)}`);

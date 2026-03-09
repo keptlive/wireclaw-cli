@@ -178,6 +178,36 @@ export class GroupQueue {
   }
 
   /**
+   * Send a system reminder to an active container via IPC.
+   * Reminders are injected as <system-reminder> tagged messages.
+   */
+  sendReminder(
+    groupJid: string,
+    category: string,
+    text: string,
+  ): boolean {
+    const state = this.getGroup(groupJid);
+    if (!state.active || !state.groupFolder) return false;
+
+    const inputDir = path.join(DATA_DIR, 'ipc', state.groupFolder, 'input');
+    try {
+      fs.mkdirSync(inputDir, { recursive: true });
+      const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}.json`;
+      const filepath = path.join(inputDir, filename);
+      const tempPath = `${filepath}.tmp`;
+      fs.writeFileSync(
+        tempPath,
+        JSON.stringify({ type: 'reminder', category, text }),
+      );
+      fs.renameSync(tempPath, filepath);
+      logger.info({ groupJid, category }, 'System reminder sent');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Signal the active container to wind down by writing a close sentinel.
    */
   closeStdin(groupJid: string): void {

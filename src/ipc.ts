@@ -858,6 +858,43 @@ export async function processTaskIpc(
       }
       break;
 
+    case 'self_reminder': {
+      // Agent-initiated reminder: schedule a delayed IPC reminder injection
+      if (data.text && data.groupFolder) {
+        const delayMs = ((data as { delay_seconds?: number }).delay_seconds || 60) * 1000;
+        const category = (data as { category?: string }).category || 'self';
+        const groupFolder = data.groupFolder;
+
+        setTimeout(() => {
+          // Write reminder directly to the container's IPC input dir
+          const inputDir = path.join(DATA_DIR, 'ipc', groupFolder, 'input');
+          try {
+            fs.mkdirSync(inputDir, { recursive: true });
+            const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}.json`;
+            const filepath = path.join(inputDir, filename);
+            const tempPath = `${filepath}.tmp`;
+            fs.writeFileSync(
+              tempPath,
+              JSON.stringify({ type: 'reminder', category, text: data.text }),
+            );
+            fs.renameSync(tempPath, filepath);
+            logger.info(
+              { groupFolder, category, delayMs },
+              'Self-reminder delivered',
+            );
+          } catch (err) {
+            logger.warn({ groupFolder, err }, 'Failed to deliver self-reminder');
+          }
+        }, delayMs);
+
+        logger.info(
+          { groupFolder, category, delayMs },
+          'Self-reminder scheduled',
+        );
+      }
+      break;
+    }
+
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');
   }

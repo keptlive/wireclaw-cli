@@ -589,6 +589,44 @@ Current reply context: ${replyType ? `type=${replyType}, from=${replyFrom}${repl
   },
 );
 
+// --- Self-reminders: agents can schedule their own system reminders ---
+
+server.tool(
+  'set_reminder',
+  `Schedule a system reminder for yourself. The reminder will be injected into your conversation as a <system-reminder> message after the specified delay. Use this to:
+- Set a timer to check back on something ("remind me in 5 minutes to check the build")
+- Keep yourself on track during long tasks
+- Schedule follow-up actions
+
+The reminder fires once. To repeat, call set_reminder again from within the reminder handler.`,
+  {
+    text: z.string().describe('The reminder text you want to receive'),
+    delay_seconds: z.number().min(10).max(3600).describe('Seconds until the reminder fires (10-3600)'),
+    category: z.string().optional().describe('Reminder category tag (default: self)'),
+  },
+  async (args) => {
+    const category = args.category || 'self';
+    const data = {
+      type: 'self_reminder',
+      text: args.text,
+      delay_seconds: args.delay_seconds,
+      category,
+      groupFolder,
+      chatJid,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(TASKS_DIR, data);
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `Reminder scheduled: "${args.text}" in ${args.delay_seconds}s (category: ${category})`,
+      }],
+    };
+  },
+);
+
 // Start the stdio transport
 const transport = new StdioServerTransport();
 await server.connect(transport);

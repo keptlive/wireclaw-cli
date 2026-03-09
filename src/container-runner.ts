@@ -311,7 +311,7 @@ function buildVolumeMounts(
   if (!fs.existsSync(groupAgentRunnerDir) && fs.existsSync(agentRunnerSrc)) {
     fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });
   }
-  ensureContainerWritable(groupAgentRunnerDir);
+  ensureContainerWritable(groupAgentRunnerDir, true);
   mounts.push({
     hostPath: groupAgentRunnerDir,
     containerPath: '/app/src',

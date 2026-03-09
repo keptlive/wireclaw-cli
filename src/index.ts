@@ -72,6 +72,10 @@ let messageLoopRunning = false;
 const channels: Channel[] = [];
 const queue = new GroupQueue();
 
+import { ReminderEngine } from './reminders.js';
+const reminders = new ReminderEngine();
+reminders.setQueue(queue);
+
 function loadState(): void {
   lastTimestamp = getRouterState('last_timestamp') || '';
   const agentTs = getRouterState('last_agent_timestamp');
@@ -168,9 +172,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   if (missedMessages.length === 0) return true;
 
+  const allowlistCfg = loadSenderAllowlist();
+
   // For non-main groups, check if trigger is required and present
   if (!isMainGroup && group.requiresTrigger !== false) {
-    const allowlistCfg = loadSenderAllowlist();
     const hasTrigger = missedMessages.some(
       (m) =>
         TRIGGER_PATTERN.test(m.content.trim()) &&
@@ -179,7 +184,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (!hasTrigger) return true;
   }
 
-  const prompt = formatMessages(missedMessages, TIMEZONE);
+  const prompt = formatMessages(missedMessages, TIMEZONE, allowlistCfg);
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
   // these messages. Save the old cursor so we can roll back on error.
@@ -192,6 +197,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     { group: group.name, messageCount: missedMessages.length },
     'Processing messages',
   );
+
+  // Start reminder engine for this container session
+  reminders.onContainerStart(chatJid, prompt);
 
   // Track idle timer for closing stdin when agent is idle
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -244,6 +252,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
       if (result.status === 'success') {
         queue.notifyIdle(chatJid);
+        reminders.onContainerIdle(chatJid);
       }
 
       if (result.status === 'error') {
@@ -255,6 +264,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   await channel.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
+  reminders.onContainerStop(chatJid);
 
   if (output === 'error' || hadError) {
     // If we already sent output to the user, don't roll back the cursor —
@@ -440,9 +450,11 @@ async function startMessageLoop(): Promise<void> {
           );
           const messagesToSend =
             allPending.length > 0 ? allPending : groupMessages;
-          const formatted = formatMessages(messagesToSend, TIMEZONE);
+          const pipeAllowlist = loadSenderAllowlist();
+          const formatted = formatMessages(messagesToSend, TIMEZONE, pipeAllowlist);
 
           if (queue.sendMessage(chatJid, formatted)) {
+            reminders.onContainerActive(chatJid); // Cancel idle reminders
             logger.debug(
               { chatJid, count: messagesToSend.length },
               'Piped messages to active container',
@@ -649,6 +661,8 @@ async function main(): Promise<void> {
       return awChannel?.getReplyContext(jid);
     },
     deliverMessage: (jid, msg) => {
+      // Ensure chat exists (FK constraint on messages table)
+      storeChatMetadata(jid, msg.timestamp, msg.sender_name, 'agentwire', false);
       storeMessage(msg);
     },
     registeredGroups: () => registeredGroups,
