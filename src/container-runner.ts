@@ -67,11 +67,25 @@ const CONTAINER_GID = 1000;
  * Only needed when the host runs as root (uid 0), since root-created dirs
  * are not writable by the non-root container user.
  */
-function ensureContainerWritable(dirPath: string): void {
+function ensureContainerWritable(dirPath: string, recursive = false): void {
   const hostUid = process.getuid?.();
   if (hostUid === 0) {
     try {
       chownSync(dirPath, CONTAINER_UID, CONTAINER_GID);
+      if (recursive) {
+        // Also fix permissions on all files inside (e.g. CLAUDE.md created by another user)
+        for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+          const fullPath = path.join(dirPath, entry.name);
+          try {
+            chownSync(fullPath, CONTAINER_UID, CONTAINER_GID);
+            if (entry.isDirectory()) {
+              ensureContainerWritable(fullPath, true);
+            }
+          } catch {
+            // Best-effort
+          }
+        }
+      }
     } catch {
       // Best-effort — may fail on some filesystems
     }
@@ -127,7 +141,7 @@ function buildVolumeMounts(
     }
 
     // Main also gets its group folder as the working directory
-    ensureContainerWritable(groupDir);
+    ensureContainerWritable(groupDir, true);
     mounts.push({
       hostPath: groupDir,
       containerPath: '/workspace/group',
@@ -135,7 +149,7 @@ function buildVolumeMounts(
     });
   } else {
     // Other groups only get their own folder
-    ensureContainerWritable(groupDir);
+    ensureContainerWritable(groupDir, true);
     mounts.push({
       hostPath: groupDir,
       containerPath: '/workspace/group',
@@ -188,6 +202,40 @@ function buildVolumeMounts(
         2,
       ) + '\n',
     );
+  }
+
+  // Pre-seed auto-memory so agents know their identity from the first invocation.
+  // Claude Code stores auto-memory at ~/.claude/projects/{path-hash}/memory/MEMORY.md
+  // where {path-hash} is the cwd with slashes replaced by dashes.
+  // Container cwd is /workspace/group → hash is -workspace-group
+  const memoryDir = path.join(groupSessionsDir, 'projects', '-workspace-group', 'memory');
+  fs.mkdirSync(memoryDir, { recursive: true });
+  ensureContainerWritable(memoryDir);
+  // Also chown intermediate dirs
+  ensureContainerWritable(path.join(groupSessionsDir, 'projects'));
+  ensureContainerWritable(path.join(groupSessionsDir, 'projects', '-workspace-group'));
+  const memoryFile = path.join(memoryDir, 'MEMORY.md');
+  if (!fs.existsSync(memoryFile)) {
+    // Read identity from manifest if available
+    const manifestPath = path.join(GROUPS_DIR, group.folder, 'wireclaw.yaml');
+    let identity = `# ${group.name}\n\nHandle: ${group.folder}\n`;
+    if (fs.existsSync(manifestPath)) {
+      try {
+        const raw = fs.readFileSync(manifestPath, 'utf-8');
+        // Extract description from YAML without importing yaml parser here
+        const descMatch = raw.match(/^\s*description:\s*"?([^"\n]+)"?\s*$/m);
+        if (descMatch) {
+          identity += `Description: ${descMatch[1].trim()}\n`;
+        }
+        const handleMatch = raw.match(/^\s*handle:\s*"?([^"\n]+)"?\s*$/m);
+        if (handleMatch) {
+          identity += `Email: ${handleMatch[1].trim()}@agentwire.email\n`;
+        }
+      } catch { /* Best-effort */ }
+    }
+    identity += `\nThis is your persistent memory. Add important learnings here.\n`;
+    fs.writeFileSync(memoryFile, identity);
+    ensureContainerWritable(memoryFile);
   }
 
   // Sync skills from container/skills/ into each group's .claude/skills/

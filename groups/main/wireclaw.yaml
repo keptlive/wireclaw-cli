@@ -10,3 +10,7 @@ context:
 
 container:
   timeout: 1800000
+
+skills:
+  - agent-builder
+  - agent-browser

@@ -144,9 +144,7 @@ function createSchema(database: Database.Database): void {
 
   // Add skills column (JSON array of skill names per group)
   try {
-    database.exec(
-      `ALTER TABLE registered_groups ADD COLUMN skills TEXT`,
-    );
+    database.exec(`ALTER TABLE registered_groups ADD COLUMN skills TEXT`);
   } catch {
     /* column already exists */
   }

@@ -741,10 +741,7 @@ export async function processTaskIpc(
           );
         }
       } else {
-        logger.warn(
-          { data },
-          'update_skills: missing handle or skills array',
-        );
+        logger.warn({ data }, 'update_skills: missing handle or skills array');
       }
       break;
 
