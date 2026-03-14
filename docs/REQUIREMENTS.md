@@ -32,9 +32,9 @@ No configuration sprawl. If you want different behavior, modify the code. The co
 
 ### AI-Native Development
 
-I don't need an installation wizard - Claude Code guides the setup. I don't need a monitoring dashboard - I ask Claude Code what's happening. I don't need elaborate logging UIs - I ask Claude to read the logs. I don't need debugging tools - I describe the problem and Claude fixes it.
+I don't need an installation wizard - the CLI guides the setup. I don't need a monitoring dashboard - I ask the agent what's happening. I don't need elaborate logging UIs - I ask it to read the logs. I don't need debugging tools - I describe the problem and it fixes it.
 
-The codebase assumes you have an AI collaborator. It doesn't need to be excessively self-documenting or self-debugging because Claude is always there.
+The codebase assumes you have an AI collaborator. It doesn't need to be excessively self-documenting or self-debugging because the agent is always there.
 
 ### Skills Over Features
 
@@ -69,7 +69,7 @@ The project uses Docker by default (cross-platform). For macOS users who prefer 
 A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 
 **Core components:**
-- **Claude Agent SDK** as the core agent
+- **Claude SDK** as the core agent
 - **Containers** for isolated agent execution (Linux VMs)
 - **WhatsApp** as the primary I/O channel
 - **Persistent memory** per conversation and globally
@@ -78,7 +78,7 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 - **Browser automation** via agent-browser
 
 **Implementation approach:**
-- Use existing tools (WhatsApp connector, Claude Agent SDK, MCP servers)
+- Use existing tools (WhatsApp connector, Claude SDK, MCP servers)
 - Minimal glue code
 - File-based systems where possible (CLAUDE.md for memory, folders for groups)
 
@@ -99,7 +99,7 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 - Agent runs in the group's folder, automatically inherits both CLAUDE.md files
 
 ### Session Management
-- Each group maintains a conversation session (via Claude Agent SDK)
+- Each group maintains a conversation session (via the SDK)
 - Sessions auto-compact when context gets too long, preserving critical information
 
 ### Container Isolation
@@ -147,11 +147,11 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 - Tools: `schedule_task`, `list_tasks`, `pause_task`, `resume_task`, `cancel_task`, `send_message`
 - Tasks stored in SQLite with run history
 - Scheduler loop checks for due tasks every minute
-- Tasks execute Claude Agent SDK in containerized group context
+- Tasks execute the SDK in containerized group context
 
 ### Web Access
 - Built-in WebSearch and WebFetch tools
-- Standard Claude Agent SDK capabilities
+- Standard SDK capabilities
 
 ### Browser Automation
 - agent-browser CLI with Chromium in container
@@ -165,8 +165,8 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 
 ### Philosophy
 - Minimal configuration files
-- Setup and customization done via Claude Code
-- Users clone the repo and run Claude Code to configure
+- Setup and customization done via the CLI
+- Users clone the repo and run the CLI to configure
 - Each user gets a custom setup matching their exact needs
 
 ### Skills

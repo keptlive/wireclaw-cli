@@ -12,15 +12,15 @@ This architecture solves that by making skill application fully programmatic usi
 
 ## Core Principle
 
-Skills are self-contained, auditable packages applied via standard git merge mechanics. Claude Code orchestrates the process — running git commands, reading skill manifests, and stepping in only when git can't resolve a conflict. The system uses existing git features (`merge-file`, `rerere`, `apply`) rather than custom merge infrastructure.
+Skills are self-contained, auditable packages applied via standard git merge mechanics. the CLI orchestrates the process — running git commands, reading skill manifests, and stepping in only when git can't resolve a conflict. The system uses existing git features (`merge-file`, `rerere`, `apply`) rather than custom merge infrastructure.
 
 ## Three-Level Resolution Model
 
 Every operation follows this escalation:
 
 1. **Git** — deterministic. `git merge-file` merges, `git rerere` replays cached resolutions, structured operations apply without merging. No AI. Handles the vast majority of cases.
-2. **Claude Code** — reads `SKILL.md`, `.intent.md`, and `state.yaml` to resolve conflicts git can't handle. Caches resolutions via `git rerere` so the same conflict never needs resolving twice.
-3. **Claude Code + user input** — when Claude Code lacks sufficient context to determine intent (e.g., two features genuinely conflict at an application level), it asks the user for a decision, then uses that input to perform the resolution. Claude Code still does the work — the user provides direction, not code.
+2. **the CLI** — reads `SKILL.md`, `.intent.md`, and `state.yaml` to resolve conflicts git can't handle. Caches resolutions via `git rerere` so the same conflict never needs resolving twice.
+3. **the CLI + user input** — when the CLI lacks sufficient context to determine intent (e.g., two features genuinely conflict at an application level), it asks the user for a decision, then uses that input to perform the resolution. the CLI still does the work — the user provides direction, not code.
 
 **Important**: A clean merge doesn't guarantee working code. Semantic conflicts can produce clean text merges that break at runtime. **Tests run after every operation.**
 
@@ -69,7 +69,7 @@ skills/add-whatsapp/
 ```
 
 ### Intent Files
-Each modified file has a `.intent.md` with structured headings: **What this skill adds**, **Key sections**, **Invariants**, and **Must-keep sections**. These give Claude Code specific guidance during conflict resolution.
+Each modified file has a `.intent.md` with structured headings: **What this skill adds**, **Key sections**, **Invariants**, and **Must-keep sections**. These give the CLI specific guidance during conflict resolution.
 
 ### Manifest
 Declares: skill metadata, core version compatibility, files added/modified, file operations, structured operations, skill relationships (conflicts, depends, tested_with), post-apply commands, and test command.
@@ -93,7 +93,7 @@ Renames, deletes, and moves are declared in the manifest and run **before** code
 3. File operations + path remapping
 4. Copy new files
 5. Merge modified code files (`git merge-file`)
-6. Conflict resolution (shared cache → `git rerere` → Claude Code → Claude Code + user input)
+6. Conflict resolution (shared cache → `git rerere` → the CLI → the CLI + user input)
 7. Apply structured operations (batched)
 8. Post-apply commands, update `state.yaml`
 9. **Run tests** (mandatory, even if all merges were clean)
@@ -148,7 +148,7 @@ Each skill includes integration tests. Tests run **always** — after apply, aft
 ## Design Principles
 
 1. **Use git, don't reinvent it.**
-2. **Three-level resolution: git → Claude Code → Claude Code + user input.**
+2. **Three-level resolution: git → the CLI → the CLI + user input.**
 3. **Clean merges aren't enough.** Tests run after every operation.
 4. **All operations are safe.** Backup/restore, no half-applied state.
 5. **One shared base**, only updated on core updates.

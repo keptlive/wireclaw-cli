@@ -2,15 +2,15 @@
 
 ## Core Principle
 
-Skills are self-contained, auditable packages that apply programmatically via standard git merge mechanics. Claude Code orchestrates the process — running git commands, reading skill manifests, and stepping in only when git can't resolve a conflict on its own. The system uses existing git features (`merge-file`, `rerere`, `apply`) rather than custom merge infrastructure.
+Skills are self-contained, auditable packages that apply programmatically via standard git merge mechanics. the CLI orchestrates the process — running git commands, reading skill manifests, and stepping in only when git can't resolve a conflict on its own. The system uses existing git features (`merge-file`, `rerere`, `apply`) rather than custom merge infrastructure.
 
 ### The Three-Level Resolution Model
 
 Every operation in the system follows this escalation:
 
 1. **Git** — deterministic, programmatic. `git merge-file` merges, `git rerere` replays cached resolutions, structured operations apply without merging. No AI involved. This handles the vast majority of cases.
-2. **Claude Code** — reads `SKILL.md`, `.intent.md`, migration guides, and `state.yaml` to understand context. Resolves conflicts that git can't handle programmatically. Caches the resolution via `git rerere` so it never needs to resolve the same conflict again.
-3. **User** — Claude Code asks the user when it lacks context or intent. This happens when two features genuinely conflict at an application level (not just a text-level merge conflict) and a human decision is needed about desired behavior.
+2. **the CLI** — reads `SKILL.md`, `.intent.md`, migration guides, and `state.yaml` to understand context. Resolves conflicts that git can't handle programmatically. Caches the resolution via `git rerere` so it never needs to resolve the same conflict again.
+3. **User** — the CLI asks the user when it lacks context or intent. This happens when two features genuinely conflict at an application level (not just a text-level merge conflict) and a human decision is needed about desired behavior.
 
 The goal is that Level 1 handles everything on a mature, well-tested installation. Level 2 handles first-time conflicts and edge cases. Level 3 is rare and only for genuine ambiguity.
 
@@ -80,7 +80,7 @@ Structured operations eliminate text merge conflicts but can still conflict at a
 The resolution policy:
 
 1. **Automatic where possible**: widen semver ranges to find a compatible version, detect and flag port/name collisions
-2. **Level 2 (Claude Code)**: if automatic resolution fails, Claude proposes options based on skill intents
+2. **Level 2 (the CLI)**: if automatic resolution fails, Claude proposes options based on skill intents
 3. **Level 3 (User)**: if it's a genuine product choice (which Redis instance should get port 6379?), ask the user
 
 Structured operation conflicts are included in the CI overlap graph alongside code file overlaps, so the maintainer test matrix catches these before users encounter them.
@@ -148,7 +148,7 @@ Adds WhatsApp webhook route and message handler to the Express server.
 - The webhook verification flow (GET route) is required by WhatsApp Cloud API
 ```
 
-Structured headings (What, Key sections, Invariants, Must-keep) give Claude Code specific guidance during conflict resolution instead of requiring it to infer from unstructured text.
+Structured headings (What, Key sections, Invariants, Must-keep) give the CLI specific guidance during conflict resolution instead of requiring it to infer from unstructured text.
 
 ### Manifest Format
 
@@ -232,9 +232,9 @@ Each layer is a separate skill with its own `SKILL.md`, manifest (with `depends:
 A user can apply a skill with their own modifications in a single step:
 
 1. Apply the skill normally (programmatic merge)
-2. Claude Code asks if the user wants to make any modifications
+2. the CLI asks if the user wants to make any modifications
 3. User describes what they want different
-4. Claude Code makes the modifications on top of the freshly applied skill
+4. the CLI makes the modifications on top of the freshly applied skill
 5. The modifications are recorded as a custom patch tied to this skill
 
 Recorded in `state.yaml`:
@@ -312,7 +312,7 @@ Before executing file operations:
 
 ## 6. The Apply Flow
 
-When a user runs the skill's slash command in Claude Code:
+When a user runs the skill's slash command in the CLI:
 
 ### Step 1: Pre-flight Checks
 
@@ -350,8 +350,8 @@ git merge-file src/server.ts .wireclaw/base/src/server.ts skills/add-whatsapp/mo
 
 1. **Check shared resolution cache** (`.wireclaw/resolutions/`) — load into local `git rerere` if a verified resolution exists for this skill combination. **Only apply if input hashes match exactly** (base hash + current hash + skill modified hash).
 2. **`git rerere`** — checks local cache. If found, applied automatically. Done.
-3. **Claude Code** — reads conflict markers + `SKILL.md` + `.intent.md` (Invariants, Must-keep sections) of current and previously applied skills. Resolves. `git rerere` caches the resolution.
-4. **User** — if Claude Code cannot determine intent, it asks the user for the desired behavior.
+3. **the CLI** — reads conflict markers + `SKILL.md` + `.intent.md` (Invariants, Must-keep sections) of current and previously applied skills. Resolves. `git rerere` caches the resolution.
+4. **User** — if the CLI cannot determine intent, it asks the user for the desired behavior.
 
 ### Step 7: Apply Structured Operations
 
@@ -368,7 +368,7 @@ Collect all structured declarations (from this skill and any previously applied 
 1. Run any `post_apply` commands (non-structured operations only)
 2. Update `.wireclaw/state.yaml` — skill record, file hashes (base, skill, merged per file), structured outcomes
 3. **Run skill tests** — mandatory, even if all merges were clean
-4. If tests fail on a clean merge → escalate to Level 2 (Claude Code diagnoses the semantic conflict)
+4. If tests fail on a clean merge → escalate to Level 2 (the CLI diagnoses the semantic conflict)
 
 ### Step 9: Clean Up
 
@@ -382,7 +382,7 @@ If tests fail and Level 2 can't resolve, restore from `.wireclaw/backup/` and re
 
 ### The Problem
 
-`git rerere` is local by default. But WireClaw has thousands of users applying the same skill combinations. Every user hitting the same conflict and waiting for Claude Code to resolve it is wasteful.
+`git rerere` is local by default. But WireClaw has thousands of users applying the same skill combinations. Every user hitting the same conflict and waiting for the CLI to resolve it is wasteful.
 
 ### The Solution
 
@@ -477,7 +477,7 @@ git reset HEAD
 
 #### Implication: Git Repository Required
 
-The adapter requires `git hash-object`, `git update-index`, and `.git/rr-cache/`. This means the project directory must be a git repository for rerere caching to work. Users who download a zip (no `.git/`) lose resolution caching but not functionality — conflicts escalate directly to Level 2 (Claude Code resolves). The system should detect this case and skip rerere operations gracefully.
+The adapter requires `git hash-object`, `git update-index`, and `.git/rr-cache/`. This means the project directory must be a git repository for rerere caching to work. Users who download a zip (no `.git/`) lose resolution caching but not functionality — conflicts escalate directly to Level 2 (the CLI resolves). The system should detect this case and skip rerere operations gracefully.
 
 ### Maintainer Workflow
 
@@ -579,8 +579,8 @@ The system never blocks or loses work. Option 1 generates a patch and records it
 No matter how much a user modifies their codebase outside the system, the three-level model can always bring them back:
 
 1. **Git**: diff current files against base, identify what changed
-2. **Claude Code**: read `state.yaml` to understand what skills were applied, compare against actual file state, identify discrepancies
-3. **User**: Claude Code asks what they intended, what to keep, what to discard
+2. **the CLI**: read `state.yaml` to understand what skills were applied, compare against actual file state, identify discrepancies
+3. **User**: the CLI asks what they intended, what to keep, what to discard
 
 There is no unrecoverable state.
 
@@ -754,7 +754,7 @@ git merge-file src/server.ts .wireclaw/base/src/server.ts updates/0.5.0-to-0.6.0
 
 1. Shipped resolutions (hash-verified) → automatic
 2. `git rerere` local cache → automatic
-3. Claude Code with `migration.md` + skill intents → resolves
+3. the CLI with `migration.md` + skill intents → resolves
 4. User → only for genuine ambiguity
 
 #### Step 7: Re-apply Custom Patches
@@ -888,7 +888,7 @@ Given `state.yaml`, reproduce the exact installation on a fresh machine with no 
 ### Replay Flow
 
 ```bash
-# Fully programmatic — no Claude Code needed
+# Fully programmatic — no the CLI needed
 
 # 1. Install core at specified version
 wireclaw-init --version 0.5.0
@@ -999,7 +999,7 @@ project/
     channels/
       whatsapp.ts
       telegram.ts
-  skills/                           # Skill packages (Claude Code slash commands)
+  skills/                           # Skill packages (the CLI slash commands)
     add-whatsapp/
       SKILL.md
       manifest.yaml
