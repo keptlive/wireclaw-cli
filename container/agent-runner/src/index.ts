@@ -115,48 +115,33 @@ function getSessionSummary(sessionId: string, transcriptPath: string): string | 
 }
 
 /**
- * Archive the full transcript to conversations/ before compaction.
+ * Archive conversation transcript (called after query completes).
+ * Note: Previously a SDK PreCompact hook. Now called directly after CLI exits.
  */
-function createPreCompactHook(assistantName?: string): HookCallback {
-  return async (input, _toolUseId, _context) => {
-    const preCompact = input as PreCompactHookInput;
-    const transcriptPath = preCompact.transcript_path;
-    const sessionId = preCompact.session_id;
+function archiveTranscript(sessionId: string, assistantName?: string): void {
+  try {
+    const projectDir = '/home/node/.claude/projects/-workspace-group';
+    const transcriptDir = path.join(projectDir, 'sessions');
+    if (!fs.existsSync(transcriptDir)) return;
 
-    if (!transcriptPath || !fs.existsSync(transcriptPath)) {
-      log('No transcript found for archiving');
-      return {};
-    }
+    const summary = getSessionSummary(sessionId, path.join(projectDir, 'sessions-index.json'));
+    if (!summary) return;
 
-    try {
-      const content = fs.readFileSync(transcriptPath, 'utf-8');
-      const messages = parseTranscript(content);
+    const conversationsDir = '/workspace/group/conversations';
+    fs.mkdirSync(conversationsDir, { recursive: true });
 
-      if (messages.length === 0) {
-        log('No messages to archive');
-        return {};
-      }
+    const date = new Date().toISOString().split('T')[0];
+    const name = sanitizeFilename(summary);
+    const filename = `${date}-${name}.md`;
+    const filePath = path.join(conversationsDir, filename);
 
-      const summary = getSessionSummary(sessionId, transcriptPath);
-      const name = summary ? sanitizeFilename(summary) : generateFallbackName();
-
-      const conversationsDir = '/workspace/group/conversations';
-      fs.mkdirSync(conversationsDir, { recursive: true });
-
-      const date = new Date().toISOString().split('T')[0];
-      const filename = `${date}-${name}.md`;
-      const filePath = path.join(conversationsDir, filename);
-
-      const markdown = formatTranscriptMarkdown(messages, summary, assistantName);
-      fs.writeFileSync(filePath, markdown);
-
-      log(`Archived conversation to ${filePath}`);
-    } catch (err) {
-      log(`Failed to archive transcript: ${err instanceof Error ? err.message : String(err)}`);
-    }
-
-    return {};
-  };
+    // Write a simple archive with the summary
+    const content = `# ${summary}\n\nDate: ${date}\nSession: ${sessionId}\nAssistant: ${assistantName || 'Andy'}\n`;
+    fs.writeFileSync(filePath, content);
+    log(`Archived conversation to ${filePath}`);
+  } catch (err) {
+    log(`Failed to archive: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // Note: Bash command sanitization (secret stripping) is now handled by
