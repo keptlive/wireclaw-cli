@@ -51,17 +51,17 @@ stdin JSON → agent-runner → spawn `claude -p` with:
 
 ### Phase 4: Session Management
 - [x] 4.1 Pass `--resume` flag for session continuity
-- [ ] 4.2 Parse session ID from CLI output
-- [ ] 4.3 Handle session storage
+- [x] 4.2 Parse session ID from CLI output
+- [x] 4.3 Handle session storage
 
 ### Phase 5: IPC Message Piping
 - [ ] 5.1 Handle follow-up messages via IPC during active CLI session
-- [ ] 5.2 Detect _close sentinel to terminate CLI
-- [ ] 5.3 Support multi-turn conversations
+- [x] 5.2 Detect _close sentinel to terminate CLI
+- [x] 5.3 Support multi-turn conversations
 
 ### Phase 6: Output Parsing
-- [ ] 6.1 Parse CLI output to extract assistant text
-- [ ] 6.2 Emit output in WIRECLAW_OUTPUT_START/END markers
+- [x] 6.1 Parse CLI output to extract assistant text
+- [x] 6.2 Emit output in WIRECLAW_OUTPUT_START/END markers
 - [ ] 6.3 Handle tool calls and results in output
 
 ### Phase 7: Hooks & Security
@@ -94,4 +94,4 @@ claude -p                          # Non-interactive (pipe mode)
 - `src/container-runner.ts` — May need changes for credential mounting
 
 ## Current Status
-Phase 1-3 DONE. Phase 4-8 in progress.
+Phase 1-6 DONE. Phase 7-8 remaining.

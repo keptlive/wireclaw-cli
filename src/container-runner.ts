@@ -331,15 +331,15 @@ function buildVolumeMounts(
   return mounts;
 }
 
-// Env vars always passed to containers regardless of scoping
+// Env vars always passed to containers regardless of scoping.
+// Note: CLI-based auth reads ~/.claude/.credentials.json directly (mounted at /home/node/.claude),
+// so CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY are optional — only needed if using API key auth.
 const ALWAYS_REQUIRED_ENV_VARS = [
-  'CLAUDE_CODE_OAUTH_TOKEN',
-  'ANTHROPIC_API_KEY',
-  'ANTHROPIC_BASE_URL',
-  'ANTHROPIC_AUTH_TOKEN',
-  'CLAUDE_MODEL',
-  'AGENTWIRE_API_KEY',
-  'AGENTWIRE_URL',
+  'ANTHROPIC_API_KEY',         // Optional: Console API key (if not using OAuth)
+  'ANTHROPIC_BASE_URL',        // Optional: custom API endpoint
+  'CLAUDE_MODEL',              // Model override
+  'AGENTWIRE_API_KEY',         // AgentWire MCP auth
+  'AGENTWIRE_URL',             // AgentWire URL
 ];
 
 /**
