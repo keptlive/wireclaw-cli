@@ -277,11 +277,11 @@ function buildVolumeMounts(
     readonly: false,
   });
 
-  // Mount .claude.json config file at /home/node/.claude.json
-  // The CLI expects this NEXT TO .claude/ dir, not inside it
+  // Ensure .claude.json exists inside the .claude/ dir
+  // The entrypoint symlinks it to /home/node/.claude.json (CLI expects it there)
+  // Note: file mounts are not supported, so we put it inside the directory mount
   const claudeJsonPath = path.join(groupSessionsDir, '.claude.json');
   if (!fs.existsSync(claudeJsonPath)) {
-    // Check for backup inside .claude/backups/
     const backupDir = path.join(groupSessionsDir, 'backups');
     if (fs.existsSync(backupDir)) {
       const backups = fs.readdirSync(backupDir).filter(f => f.startsWith('.claude.json.backup'));
@@ -294,11 +294,6 @@ function buildVolumeMounts(
     }
     ensureContainerWritable(claudeJsonPath);
   }
-  mounts.push({
-    hostPath: claudeJsonPath,
-    containerPath: '/home/node/.claude.json',
-    readonly: false,
-  });
 
   // Per-group IPC namespace: each group gets its own IPC directory
   // This prevents cross-group privilege escalation via IPC
