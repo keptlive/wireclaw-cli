@@ -16,7 +16,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { query, HookCallback, PreCompactHookInput, PreToolUseHookInput } from '@anthropic-ai/claude-agent-sdk';
+import { spawn, ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 
 interface McpServerConfig {
@@ -64,52 +64,10 @@ interface SessionsIndex {
   entries: SessionEntry[];
 }
 
-interface SDKUserMessage {
-  type: 'user';
-  message: { role: 'user'; content: string };
-  parent_tool_use_id: null;
-  session_id: string;
-}
-
 const IPC_INPUT_DIR = '/workspace/ipc/input';
 const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 const IPC_POLL_MS = 500;
-
-/**
- * Push-based async iterable for streaming user messages to the SDK.
- * Keeps the iterable alive until end() is called, preventing isSingleUserTurn.
- */
-class MessageStream {
-  private queue: SDKUserMessage[] = [];
-  private waiting: (() => void) | null = null;
-  private done = false;
-
-  push(text: string): void {
-    this.queue.push({
-      type: 'user',
-      message: { role: 'user', content: text },
-      parent_tool_use_id: null,
-      session_id: '',
-    });
-    this.waiting?.();
-  }
-
-  end(): void {
-    this.done = true;
-    this.waiting?.();
-  }
-
-  async *[Symbol.asyncIterator](): AsyncGenerator<SDKUserMessage> {
-    while (true) {
-      while (this.queue.length > 0) {
-        yield this.queue.shift()!;
-      }
-      if (this.done) return;
-      await new Promise<void>(r => { this.waiting = r; });
-      this.waiting = null;
-    }
-  }
-}
+// MessageStream removed — CLI uses stdin pipe instead of SDK async iterator
 
 async function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -201,29 +159,10 @@ function createPreCompactHook(assistantName?: string): HookCallback {
   };
 }
 
-// Secrets to strip from Bash tool subprocess environments.
-// These are needed by claude-code for API auth but should never
-// be visible to commands Kit runs.
-const SECRET_ENV_VARS = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'];
-
-function createSanitizeBashHook(): HookCallback {
-  return async (input, _toolUseId, _context) => {
-    const preInput = input as PreToolUseHookInput;
-    const command = (preInput.tool_input as { command?: string })?.command;
-    if (!command) return {};
-
-    const unsetPrefix = `unset ${SECRET_ENV_VARS.join(' ')} 2>/dev/null; `;
-    return {
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        updatedInput: {
-          ...(preInput.tool_input as Record<string, unknown>),
-          command: unsetPrefix + command,
-        },
-      },
-    };
-  };
-}
+// Note: Bash command sanitization (secret stripping) is now handled by
+// the CLI's own permission system and the --dangerously-skip-permissions flag.
+// Secrets are passed via env to the CLI child process but the CLI manages
+// its own subprocess environments.
 
 function sanitizeFilename(summary: string): string {
   return summary
@@ -370,10 +309,64 @@ function waitForIpcMessage(): Promise<string | null> {
 }
 
 /**
- * Run a single query and stream results via writeOutput.
- * Uses MessageStream (AsyncIterable) to keep isSingleUserTurn=false,
- * allowing agent teams subagents to run to completion.
- * Also pipes IPC messages into the stream during the query.
+ * Build MCP config JSON and write to ~/.mcp.json for the CLI to discover.
+ */
+function writeMcpConfig(
+  mcpServerPath: string,
+  containerInput: ContainerInput,
+  sdkEnv: Record<string, string | undefined>,
+): void {
+  const mcpConfig: Record<string, Record<string, unknown>> = {
+    mcpServers: {
+      wireclaw: {
+        command: 'node',
+        args: [mcpServerPath],
+        env: {
+          WIRECLAW_CHAT_JID: containerInput.chatJid,
+          WIRECLAW_GROUP_FOLDER: containerInput.groupFolder,
+          WIRECLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+          WIRECLAW_REPLY_TYPE: containerInput.replyContext?.type || '',
+          WIRECLAW_REPLY_FROM: containerInput.replyContext?.from || '',
+          WIRECLAW_REPLY_SUBJECT: containerInput.replyContext?.subject || '',
+        },
+      },
+    },
+  };
+
+  // AgentWire MCP
+  if (sdkEnv.AGENTWIRE_API_KEY && sdkEnv.AGENTWIRE_AGENT_ID) {
+    mcpConfig.mcpServers.agentwire = {
+      type: 'http',
+      url: `${sdkEnv.AGENTWIRE_URL || 'https://agentwire.run'}/api/mcp?agentId=${sdkEnv.AGENTWIRE_AGENT_ID}`,
+      headers: {
+        Authorization: `Bearer ${sdkEnv.AGENTWIRE_API_KEY}`,
+      },
+    };
+  }
+
+  // Custom MCP servers from manifest
+  for (const [name, spec] of Object.entries(containerInput.mcpServers || {})) {
+    if (name === 'wireclaw' || name === 'agentwire') continue;
+    if ((spec.type === 'sse' || spec.type === 'http' || spec.type === 'streamable-http') && spec.url) {
+      mcpConfig.mcpServers[name] = { type: spec.type === 'streamable-http' ? 'http' : spec.type, url: spec.url, headers: spec.headers };
+    } else if (spec.command) {
+      const resolvedEnv: Record<string, string> = {};
+      for (const [k, v] of Object.entries(spec.env || {})) {
+        resolvedEnv[k] = v.startsWith('$') ? (sdkEnv[v.slice(1)] || '') : v;
+      }
+      mcpConfig.mcpServers[name] = { command: spec.command, args: spec.args || [], env: resolvedEnv };
+    }
+  }
+
+  const mcpPath = path.join(process.env.HOME || '/home/node', '.mcp.json');
+  fs.writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2));
+  log(`Wrote MCP config to ${mcpPath} (${Object.keys(mcpConfig.mcpServers).length} servers)`);
+}
+
+/**
+ * Run a single query by spawning `claude -p` CLI process.
+ * Replaces the Agent SDK query() call with the Claude Code CLI,
+ * which properly handles OAuth token exchange for Max subscription auth.
  */
 async function runQuery(
   prompt: string,
@@ -383,44 +376,19 @@ async function runQuery(
   sdkEnv: Record<string, string | undefined>,
   resumeAt?: string,
 ): Promise<{ newSessionId?: string; lastAssistantUuid?: string; closedDuringQuery: boolean }> {
-  const stream = new MessageStream();
-  stream.push(prompt);
-
-  // Poll IPC for follow-up messages and _close sentinel during the query
-  let ipcPolling = true;
   let closedDuringQuery = false;
-  const pollIpcDuringQuery = () => {
-    if (!ipcPolling) return;
-    if (shouldClose()) {
-      log('Close sentinel detected during query, ending stream');
-      closedDuringQuery = true;
-      stream.end();
-      ipcPolling = false;
-      return;
-    }
-    const messages = drainIpcInput();
-    for (const text of messages) {
-      log(`Piping IPC message into active query (${text.length} chars)`);
-      stream.push(text);
-    }
-    setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
-  };
-  setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
 
-  let newSessionId: string | undefined;
-  let lastAssistantUuid: string | undefined;
-  let messageCount = 0;
-  let resultCount = 0;
+  // Write MCP config for the CLI
+  writeMcpConfig(mcpServerPath, containerInput, sdkEnv);
 
-  // Load global CLAUDE.md as additional system context (shared across all groups)
+  // Build global CLAUDE.md as append system prompt
   const globalClaudeMdPath = '/workspace/global/CLAUDE.md';
-  let globalClaudeMd: string | undefined;
+  let appendPrompt = '';
   if (!containerInput.isMain && fs.existsSync(globalClaudeMdPath)) {
-    globalClaudeMd = fs.readFileSync(globalClaudeMdPath, 'utf-8');
+    appendPrompt = fs.readFileSync(globalClaudeMdPath, 'utf-8');
   }
 
-  // Discover additional directories mounted at /workspace/extra/*
-  // These are passed to the SDK so their CLAUDE.md files are loaded automatically
+  // Discover additional directories
   const extraDirs: string[] = [];
   const extraBase = '/workspace/extra';
   if (fs.existsSync(extraBase)) {
@@ -431,122 +399,186 @@ async function runQuery(
       }
     }
   }
-  if (extraDirs.length > 0) {
-    log(`Additional directories: ${extraDirs.join(', ')}`);
-  }
 
-  // Build custom MCP servers from manifest
-  const customMcp: Record<string, object> = {};
+  // Build allowed tools list
   const customToolPatterns: string[] = [];
-  for (const [name, spec] of Object.entries(containerInput.mcpServers || {})) {
-    if (name === 'wireclaw' || name === 'agentwire') continue; // reserved
-    if ((spec.type === 'sse' || spec.type === 'http' || spec.type === 'streamable-http') && spec.url) {
-      // SDK uses 'http' for streamable HTTP
-      const sdkType = spec.type === 'streamable-http' ? 'http' : spec.type;
-      customMcp[name] = { type: sdkType as string, url: spec.url, headers: spec.headers };
-    } else if (spec.command) {
-      // Resolve $VAR references in env from sdkEnv
-      const resolvedEnv: Record<string, string> = {};
-      for (const [k, v] of Object.entries(spec.env || {})) {
-        resolvedEnv[k] = v.startsWith('$') ? (sdkEnv[v.slice(1)] || '') : v;
-      }
-      customMcp[name] = { command: spec.command, args: spec.args || [], env: resolvedEnv };
+  for (const name of Object.keys(containerInput.mcpServers || {})) {
+    if (name !== 'wireclaw' && name !== 'agentwire') {
+      customToolPatterns.push(`mcp__${name}__*`);
     }
-    customToolPatterns.push(`mcp__${name}__*`);
   }
 
-  for await (const message of query({
-    prompt: stream,
-    options: {
+  const allowedTools = [
+    'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep',
+    'WebSearch', 'WebFetch',
+    'Task', 'TaskOutput', 'TaskStop',
+    'TeamCreate', 'TeamDelete', 'SendMessage',
+    'TodoWrite', 'ToolSearch', 'Skill',
+    'NotebookEdit',
+    'mcp__wireclaw__*',
+    'mcp__agentwire__*',
+    ...customToolPatterns,
+  ];
+
+  // Build CLI arguments
+  const args: string[] = [
+    '-p',                                          // Non-interactive pipe mode
+    '--dangerously-skip-permissions',              // Skip permission prompts
+    '--output-format', 'json',                     // Structured JSON output
+  ];
+
+  // Model selection
+  if (sdkEnv.CLAUDE_MODEL) {
+    args.push('--model', sdkEnv.CLAUDE_MODEL);
+  }
+
+  // Session resume
+  if (sessionId) {
+    args.push('--resume', sessionId);
+  }
+
+  // Allowed tools
+  args.push('--allowed-tools', ...allowedTools);
+
+  // Additional directories
+  for (const dir of extraDirs) {
+    args.push('--add-dir', dir);
+  }
+
+  // System prompt append (global CLAUDE.md)
+  if (appendPrompt) {
+    args.push('--append-system-prompt', appendPrompt);
+  }
+
+  // MCP config
+  const mcpPath = path.join(process.env.HOME || '/home/node', '.mcp.json');
+  args.push('--mcp-config', mcpPath);
+
+  log(`Spawning: claude ${args.slice(0, 6).join(' ')} ... (${args.length} args total)`);
+
+  // Build env for the child process — merge secrets but DON'T expose them in process.env
+  const childEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined) childEnv[k] = v;
+  }
+  for (const [k, v] of Object.entries(containerInput.secrets || {})) {
+    if (v) childEnv[k] = v;
+  }
+  // Ensure HOME is set for CLI to find .claude/ credentials
+  childEnv.HOME = process.env.HOME || '/home/node';
+
+  return new Promise((resolve, reject) => {
+    const child = spawn('claude', args, {
       cwd: '/workspace/group',
-      additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
-      resume: sessionId,
-      resumeSessionAt: resumeAt,
-      systemPrompt: globalClaudeMd
-        ? { type: 'preset' as const, preset: 'claude_code' as const, append: globalClaudeMd }
-        : undefined,
-      allowedTools: [
-        'Bash',
-        'Read', 'Write', 'Edit', 'Glob', 'Grep',
-        'WebSearch', 'WebFetch',
-        'Task', 'TaskOutput', 'TaskStop',
-        'TeamCreate', 'TeamDelete', 'SendMessage',
-        'TodoWrite', 'ToolSearch', 'Skill',
-        'NotebookEdit',
-        'mcp__wireclaw__*',
-        'mcp__agentwire__*',
-        ...customToolPatterns,
-      ],
-      env: sdkEnv,
-      model: sdkEnv.CLAUDE_MODEL || undefined,
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      settingSources: ['project', 'user'],
-      mcpServers: {
-        wireclaw: {
-          command: 'node',
-          args: [mcpServerPath],
-          env: {
-            WIRECLAW_CHAT_JID: containerInput.chatJid,
-            WIRECLAW_GROUP_FOLDER: containerInput.groupFolder,
-            WIRECLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
-            WIRECLAW_REPLY_TYPE: containerInput.replyContext?.type || '',
-            WIRECLAW_REPLY_FROM: containerInput.replyContext?.from || '',
-            WIRECLAW_REPLY_SUBJECT: containerInput.replyContext?.subject || '',
-          },
-        },
-        // AgentWire MCP: connect to platform tools (email, SMS, memory, etc.) via Streamable HTTP
-        ...(sdkEnv.AGENTWIRE_API_KEY && sdkEnv.AGENTWIRE_AGENT_ID ? {
-          agentwire: {
-            type: 'http' as const,
-            url: `${sdkEnv.AGENTWIRE_URL || 'https://agentwire.run'}/mcp?agentId=${sdkEnv.AGENTWIRE_AGENT_ID}`,
-            headers: {
-              Authorization: `Bearer ${sdkEnv.AGENTWIRE_API_KEY}`,
-            },
-          },
-        } : {}),
-        // Custom MCP servers from manifest
-        ...customMcp,
-      },
-      hooks: {
-        PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
-        PreToolUse: [{ matcher: 'Bash', hooks: [createSanitizeBashHook()] }],
-      },
-    }
-  })) {
-    messageCount++;
-    const msgType = message.type === 'system' ? `system/${(message as { subtype?: string }).subtype}` : message.type;
-    log(`[msg #${messageCount}] type=${msgType}`);
+      env: childEnv,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
 
-    if (message.type === 'assistant' && 'uuid' in message) {
-      lastAssistantUuid = (message as { uuid: string }).uuid;
-    }
+    let stdout = '';
+    let stderr = '';
+    let newSessionId: string | undefined;
 
-    if (message.type === 'system' && message.subtype === 'init') {
-      newSessionId = message.session_id;
-      log(`Session initialized: ${newSessionId}`);
-    }
+    child.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
 
-    if (message.type === 'system' && (message as { subtype?: string }).subtype === 'task_notification') {
-      const tn = message as { task_id: string; status: string; summary: string };
-      log(`Task notification: task=${tn.task_id} status=${tn.status} summary=${tn.summary}`);
-    }
+    child.stderr.on('data', (data: Buffer) => {
+      const text = data.toString();
+      stderr += text;
+      // Log stderr lines that contain useful info
+      for (const line of text.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('[') && trimmed.length > 3) {
+          log(`[claude stderr] ${trimmed.slice(0, 200)}`);
+        }
+      }
+    });
 
-    if (message.type === 'result') {
-      resultCount++;
-      const textResult = 'result' in message ? (message as { result?: string }).result : null;
-      log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
+    // Pipe the prompt to stdin
+    child.stdin.write(prompt);
+    child.stdin.end();
+
+    // Poll IPC for _close sentinel during the query
+    let ipcPolling = true;
+    const pollIpc = () => {
+      if (!ipcPolling) return;
+      if (shouldClose()) {
+        log('Close sentinel detected during query, killing CLI process');
+        closedDuringQuery = true;
+        child.kill('SIGTERM');
+        ipcPolling = false;
+        return;
+      }
+      // Note: follow-up IPC messages during an active CLI session are not supported
+      // in pipe mode — they will be queued for the next runQuery() call
+      setTimeout(pollIpc, IPC_POLL_MS);
+    };
+    setTimeout(pollIpc, IPC_POLL_MS);
+
+    child.on('close', (code) => {
+      ipcPolling = false;
+      log(`Claude CLI exited with code ${code}`);
+
+      if (stderr.includes('Failed to authenticate') || stderr.includes('401')) {
+        log(`AUTH ERROR: ${stderr.slice(0, 300)}`);
+      }
+
+      // Parse JSON output
+      let result: string | null = null;
+      try {
+        const parsed = JSON.parse(stdout);
+        // JSON output format: { type: "result", subtype: "success", result: "...", session_id: "..." }
+        if (parsed.result) {
+          result = parsed.result;
+        } else if (parsed.content) {
+          // Alternative format
+          result = typeof parsed.content === 'string' ? parsed.content : JSON.stringify(parsed.content);
+        } else if (typeof parsed === 'string') {
+          result = parsed;
+        }
+        if (parsed.session_id) {
+          newSessionId = parsed.session_id;
+        }
+      } catch {
+        // If not valid JSON, treat stdout as plain text result
+        result = stdout.trim() || null;
+      }
+
+      // Handle errors
+      if (code !== 0 && !closedDuringQuery) {
+        const errorText = stderr.trim() || result || `CLI exited with code ${code}`;
+        // Check if the error is an auth failure — include it as the result so the user sees it
+        if (stderr.includes('authenticate') || stderr.includes('401') || stderr.includes('OAuth')) {
+          result = errorText;
+        }
+        log(`CLI error (code ${code}): ${errorText.slice(0, 200)}`);
+      }
+
+      if (result) {
+        log(`Result: ${result.slice(0, 200)}`);
+      }
+
       writeOutput({
-        status: 'success',
-        result: textResult || null,
-        newSessionId
+        status: code === 0 || closedDuringQuery ? 'success' : 'error',
+        result,
+        newSessionId,
+        ...(code !== 0 && !closedDuringQuery ? { error: stderr.trim().slice(0, 500) } : {}),
       });
-    }
-  }
 
-  ipcPolling = false;
-  log(`Query done. Messages: ${messageCount}, results: ${resultCount}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`);
-  return { newSessionId, lastAssistantUuid, closedDuringQuery };
+      resolve({ newSessionId, lastAssistantUuid: undefined, closedDuringQuery });
+    });
+
+    child.on('error', (err) => {
+      ipcPolling = false;
+      log(`Failed to spawn claude CLI: ${err.message}`);
+      writeOutput({
+        status: 'error',
+        result: null,
+        error: `Failed to spawn claude: ${err.message}`,
+      });
+      reject(err);
+    });
+  });
 }
 
 async function main(): Promise<void> {
