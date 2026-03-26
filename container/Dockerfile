@@ -1,5 +1,7 @@
-# WireClaw Agent Container
-# Runs Claude Agent SDK in isolated Linux VM with browser automation
+# WireClaw Agent Container (CLI Edition)
+# Runs Claude Code CLI in isolated Linux containers with browser automation
+# Auth: Uses `claude login` OAuth token from mounted ~/.claude/.credentials.json
+# No Agent SDK dependency — spawns `claude -p` as child process
 
 FROM node:22-slim
 
@@ -66,7 +68,9 @@ RUN pip3 install --break-system-packages \
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Install agent-browser and claude-code globally
+# Install agent-browser and claude-code CLI globally
+# Claude Code CLI is the primary execution engine (replaces Agent SDK)
+# It handles OAuth token exchange, tool execution, and MCP servers
 RUN npm install -g agent-browser @anthropic-ai/claude-code
 
 # Create app directory

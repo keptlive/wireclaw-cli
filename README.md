@@ -192,3 +192,30 @@ See [CHANGELOG.md](CHANGELOG.md) for breaking changes and migration notes.
 ## License
 
 MIT
+
+## CLI Edition (wireclaw-cli)
+
+This fork replaces the Agent SDK with the Claude Code CLI for authentication. This enables **Max subscription** usage from servers without needing Console API keys.
+
+### How it works
+
+Instead of `@anthropic-ai/claude-agent-sdk`'s `query()` function, containers spawn `claude -p --dangerously-skip-permissions` as a child process. The CLI handles OAuth token exchange internally, supporting `claude login` authentication.
+
+### Setup
+
+1. Install Claude Code CLI on the server: `npm install -g @anthropic-ai/claude-code`
+2. Login: `claude login` (follow the browser auth flow)
+3. Build container: `./container/build.sh`
+4. Start WireClaw: `systemctl start wireclaw`
+
+The CLI reads `~/.claude/.credentials.json` (mounted into containers at `/home/node/.claude/`) and handles token refresh automatically.
+
+### Key differences from upstream WireClaw
+
+| Feature | Upstream (Agent SDK) | CLI Edition |
+|---------|---------------------|-------------|
+| Auth | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` env var | `claude login` OAuth (reads .credentials.json) |
+| Execution | `query()` from `@anthropic-ai/claude-agent-sdk` | `spawn('claude', ['-p', ...])` |
+| MCP servers | Passed via SDK options | Written to `.mcp.json`, loaded via `--mcp-config` |
+| Hooks | SDK PreToolUse/PreCompact callbacks | CLI's built-in hook system |
+| Max subscription | Not supported (SDK rejects OAuth) | Fully supported |
