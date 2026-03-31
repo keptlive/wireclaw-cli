@@ -53,6 +53,7 @@ export interface RegisteredGroup {
   isMain?: boolean; // True for the main control group (no trigger, elevated privileges)
   agentwireAgentId?: string; // AgentWire agent ID (auto-created on group registration)
   model?: string; // Claude model override (e.g. 'claude-sonnet-4-5-20250514')
+  framework?: string; // Agent framework: 'claude-code' (default), 'opencode', 'hermes'
   skills?: string[]; // Skills available to this group (from manifest). If unset, all skills are synced.
 }
 

@@ -2,7 +2,7 @@
  * Container runtime abstraction for WireClaw.
  * All runtime-specific logic lives here so swapping runtimes means changing one file.
  */
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 import { logger } from './logger.js';
 
@@ -17,15 +17,15 @@ export function readonlyMountArgs(
   return ['-v', `${hostPath}:${containerPath}:ro`];
 }
 
-/** Returns the shell command to stop a container by name. */
-export function stopContainer(name: string): string {
-  return `${CONTAINER_RUNTIME_BIN} stop ${name}`;
+/** Returns the args array to stop a container by name. */
+export function stopContainerArgs(name: string): string[] {
+  return ['stop', name];
 }
 
 /** Ensure the container runtime is running, starting it if needed. */
 export function ensureContainerRuntimeRunning(): void {
   try {
-    execSync(`${CONTAINER_RUNTIME_BIN} info`, {
+    execFileSync(CONTAINER_RUNTIME_BIN, ['info'], {
       stdio: 'pipe',
       timeout: 10000,
     });
@@ -43,14 +43,15 @@ export function ensureContainerRuntimeRunning(): void {
 /** Kill orphaned WireClaw containers from previous runs. */
 export function cleanupOrphans(): void {
   try {
-    const output = execSync(
-      `${CONTAINER_RUNTIME_BIN} ps --filter name=wireclaw- --format '{{.Names}}'`,
+    const output = execFileSync(
+      CONTAINER_RUNTIME_BIN,
+      ['ps', '--filter', 'name=wireclaw-', '--format', '{{.Names}}'],
       { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf-8' },
     );
     const orphans = output.trim().split('\n').filter(Boolean);
     for (const name of orphans) {
       try {
-        execSync(stopContainer(name), { stdio: 'pipe' });
+        execFileSync(CONTAINER_RUNTIME_BIN, stopContainerArgs(name), { stdio: 'pipe' });
       } catch {
         /* already stopped */
       }

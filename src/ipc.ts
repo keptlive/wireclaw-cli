@@ -1,7 +1,11 @@
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 
 import { CronExpressionParser } from 'cron-parser';
+
+const execFileAsync = promisify(execFile);
 
 import {
   DATA_DIR,
@@ -164,6 +168,11 @@ export function startIpcWatcher(deps: IpcDeps): void {
     for (const group of Object.values(registeredGroups)) {
       if (group.isMain) folderIsMain.set(group.folder, true);
     }
+    // Prototype-safe lookup for registeredGroups
+    const safeGroupLookup = (jid: string) =>
+      Object.prototype.hasOwnProperty.call(registeredGroups, jid)
+        ? registeredGroups[jid]
+        : undefined;
 
     for (const sourceGroup of groupFolders) {
       const isMain = folderIsMain.get(sourceGroup) === true;
@@ -178,11 +187,14 @@ export function startIpcWatcher(deps: IpcDeps): void {
             .filter((f) => f.endsWith('.json'));
           for (const file of messageFiles) {
             const filePath = path.join(messagesDir, file);
+            const processingPath = filePath + '.processing';
             try {
-              const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+              // Atomic rename before reading to prevent double-processing (TOCTOU)
+              fs.renameSync(filePath, processingPath);
+              const data = JSON.parse(fs.readFileSync(processingPath, 'utf-8'));
               if (data.type === 'message' && data.chatJid && data.text) {
                 // Authorization: verify this group can send to this chatJid
-                const targetGroup = registeredGroups[data.chatJid];
+                const targetGroup = safeGroupLookup(data.chatJid);
                 if (
                   isMain ||
                   (targetGroup && targetGroup.folder === sourceGroup)
@@ -200,7 +212,7 @@ export function startIpcWatcher(deps: IpcDeps): void {
                 }
               } else if (data.type === 'reply' && data.chatJid && data.text) {
                 // Authorization: same as message
-                const targetGroup = registeredGroups[data.chatJid];
+                const targetGroup = safeGroupLookup(data.chatJid);
                 if (
                   isMain ||
                   (targetGroup && targetGroup.folder === sourceGroup)
@@ -293,7 +305,7 @@ export function startIpcWatcher(deps: IpcDeps): void {
                   );
                 }
               }
-              fs.unlinkSync(filePath);
+              fs.unlinkSync(processingPath);
             } catch (err) {
               logger.error(
                 { file, sourceGroup, err },
@@ -301,8 +313,10 @@ export function startIpcWatcher(deps: IpcDeps): void {
               );
               const errorDir = path.join(ipcBaseDir, 'errors');
               fs.mkdirSync(errorDir, { recursive: true });
+              // Move whichever file still exists to the error dir
+              const src = fs.existsSync(processingPath) ? processingPath : filePath;
               fs.renameSync(
-                filePath,
+                src,
                 path.join(errorDir, `${sourceGroup}-${file}`),
               );
             }
@@ -323,11 +337,14 @@ export function startIpcWatcher(deps: IpcDeps): void {
             .filter((f) => f.endsWith('.json'));
           for (const file of taskFiles) {
             const filePath = path.join(tasksDir, file);
+            const processingPath = filePath + '.processing';
             try {
-              const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+              // Atomic rename before reading to prevent double-processing (TOCTOU)
+              fs.renameSync(filePath, processingPath);
+              const data = JSON.parse(fs.readFileSync(processingPath, 'utf-8'));
               // Pass source group identity to processTaskIpc for authorization
               await processTaskIpc(data, sourceGroup, isMain, deps);
-              fs.unlinkSync(filePath);
+              fs.unlinkSync(processingPath);
             } catch (err) {
               logger.error(
                 { file, sourceGroup, err },
@@ -335,8 +352,9 @@ export function startIpcWatcher(deps: IpcDeps): void {
               );
               const errorDir = path.join(ipcBaseDir, 'errors');
               fs.mkdirSync(errorDir, { recursive: true });
+              const src = fs.existsSync(processingPath) ? processingPath : filePath;
               fs.renameSync(
-                filePath,
+                src,
                 path.join(errorDir, `${sourceGroup}-${file}`),
               );
             }
@@ -393,6 +411,27 @@ export async function processTaskIpc(
 ): Promise<void> {
   const registeredGroups = deps.registeredGroups();
 
+  // Input validation: reject oversized or malformed fields
+  const MAX_FIELD_LEN = 10_000;
+  const ID_PATTERN = /^[\w\-.:/]+$/; // alphanumeric, dash, dot, colon, slash
+  if (data.taskId && (!ID_PATTERN.test(data.taskId) || data.taskId.length > 200)) {
+    logger.warn({ taskId: data.taskId, sourceGroup }, 'Invalid taskId format');
+    return;
+  }
+  if (data.targetJid && (!ID_PATTERN.test(data.targetJid) || data.targetJid.length > 200)) {
+    logger.warn({ targetJid: data.targetJid, sourceGroup }, 'Invalid targetJid format');
+    return;
+  }
+  if (data.prompt && data.prompt.length > MAX_FIELD_LEN) {
+    logger.warn({ sourceGroup, len: data.prompt.length }, 'IPC prompt too long');
+    return;
+  }
+  // Guard against prototype pollution on object lookups
+  const safeGroupLookup = (jid: string) =>
+    Object.prototype.hasOwnProperty.call(registeredGroups, jid)
+      ? registeredGroups[jid]
+      : undefined;
+
   switch (data.type) {
     case 'schedule_task':
       if (
@@ -403,7 +442,7 @@ export async function processTaskIpc(
       ) {
         // Resolve the target group from JID
         const targetJid = data.targetJid as string;
-        const targetGroupEntry = registeredGroups[targetJid];
+        const targetGroupEntry = safeGroupLookup(targetJid);
 
         if (!targetGroupEntry) {
           logger.warn(
@@ -606,6 +645,54 @@ export async function processTaskIpc(
       }
       break;
 
+    case 'system_health': {
+      // Main only: run safe system health checks and return results via IPC message
+      if (!isMain) {
+        logger.warn({ sourceGroup }, 'Unauthorized system_health attempt blocked');
+        break;
+      }
+
+      const checks: Record<string, string> = {};
+      const safeCommands: [string, string, string[]][] = [
+        ['disk', 'df', ['-h', '/']],
+        ['memory', 'free', ['-h']],
+        ['uptime', 'uptime', []],
+        ['docker_containers', 'docker', ['ps', '--format', 'table {{.Names}}\t{{.Status}}\t{{.Image}}']],
+        ['docker_images', 'docker', ['images', '--format', 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}']],
+        ['systemd_wireclaw', 'systemctl', ['status', 'wireclaw', '--no-pager', '-l']],
+        ['load_average', 'cat', ['/proc/loadavg']],
+        ['top_processes', 'ps', ['aux', '--sort=-rss', '--no-headers']],
+      ];
+
+      for (const [label, cmd, args] of safeCommands) {
+        try {
+          const { stdout } = await execFileAsync(cmd, args, { timeout: 10000 });
+          checks[label] = stdout.trim();
+          // Limit top_processes to 10 lines
+          if (label === 'top_processes') {
+            checks[label] = checks[label].split('\n').slice(0, 10).join('\n');
+          }
+        } catch (err: any) {
+          checks[label] = `ERROR: ${err.message || String(err)}`;
+        }
+      }
+
+      // Write result as IPC message back to the agent
+      const resultText = Object.entries(checks)
+        .map(([k, v]) => `=== ${k.toUpperCase()} ===\n${v}`)
+        .join('\n\n');
+
+      const outputDir = path.join(DATA_DIR, 'ipc', sourceGroup, 'output');
+      fs.mkdirSync(outputDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(outputDir, `health-${Date.now()}.json`),
+        JSON.stringify({ type: 'system_health', result: resultText }),
+      );
+
+      logger.info({ sourceGroup }, 'System health check completed');
+      break;
+    }
+
     case 'refresh_groups':
       // Only main group can request a refresh
       if (isMain) {
@@ -721,11 +808,17 @@ export async function processTaskIpc(
 
         // Copy all files from draft to target (wireclaw.yaml, claude.md, etc.)
         for (const file of fs.readdirSync(draftDir)) {
-          fs.copyFileSync(
-            path.join(draftDir, file),
-            path.join(targetDir, file),
-          );
+          const src = path.join(draftDir, file);
+          const dst = path.join(targetDir, file);
+          fs.copyFileSync(src, dst);
+          // Restrict .env permissions — contains API keys
+          if (file === '.env') {
+            fs.chmodSync(dst, 0o600);
+          }
         }
+
+        // Clean up draft dir (contains secrets like .env with API keys)
+        fs.rmSync(draftDir, { recursive: true, force: true });
 
         // Apply the manifest from the target location (full Zod validation)
         const targetManifest = path.join(targetDir, 'wireclaw.yaml');
@@ -933,6 +1026,13 @@ export async function processTaskIpc(
       }
       break;
     }
+
+    case 'vault_store':
+      logger.info(
+        { sourceGroup, secret_name: (data as { secret_name?: string }).secret_name, url: (data as { url?: string }).url },
+        '[vault] Agent stored secret',
+      );
+      break;
 
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');

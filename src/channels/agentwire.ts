@@ -97,6 +97,12 @@ export class AgentWireChannel implements Channel {
   async connect(): Promise<void> {
     this.connected = true;
 
+    // Clear any existing sync interval to prevent leaks on reconnect
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = null;
+    }
+
     // Connect SSE for all registered groups with agentwire: JIDs
     this.syncConnections();
 

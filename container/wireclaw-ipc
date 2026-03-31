@@ -1,0 +1,237 @@
+#!/usr/bin/env node
+/**
+ * wireclaw-ipc — CLI bridge for non-MCP agent frameworks (Hermes, OpenCode, etc.)
+ *
+ * Writes IPC JSON files that the WireClaw host process reads and acts on.
+ * Same format as the MCP server (ipc-mcp-stdio.ts), so the host can't tell
+ * the difference.
+ *
+ * Usage (JSON pipe — preferred, safe from shell injection):
+ *   echo '{"command":"send_message","text":"Hello!"}' | wireclaw-ipc
+ *
+ * Usage (positional args — convenience for simple cases):
+ *   wireclaw-ipc send_message "Hello world"
+ *   wireclaw-ipc system_health
+ *
+ * Environment (set by agent-runner):
+ *   WIRECLAW_CHAT_JID      — current chat JID
+ *   WIRECLAW_GROUP_FOLDER  — agent's group folder name
+ *   WIRECLAW_IS_MAIN       — "1" if main agent
+ *   WIRECLAW_REPLY_TYPE    — reply context type (email, talk, etc.)
+ *   WIRECLAW_REPLY_FROM    — reply context sender
+ *   WIRECLAW_REPLY_SUBJECT — reply context subject
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+const IPC_DIR = '/workspace/ipc';
+const MESSAGES_DIR = path.join(IPC_DIR, 'messages');
+const TASKS_DIR = path.join(IPC_DIR, 'tasks');
+
+const chatJid = process.env.WIRECLAW_CHAT_JID || '';
+const groupFolder = process.env.WIRECLAW_GROUP_FOLDER || '';
+const isMain = process.env.WIRECLAW_IS_MAIN === '1';
+const replyType = process.env.WIRECLAW_REPLY_TYPE || '';
+const replyFrom = process.env.WIRECLAW_REPLY_FROM || '';
+const replySubject = process.env.WIRECLAW_REPLY_SUBJECT || '';
+
+function writeIpcFile(dir, data) {
+  fs.mkdirSync(dir, { recursive: true });
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`;
+  const filepath = path.join(dir, filename);
+  const tempPath = `${filepath}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2));
+  fs.renameSync(tempPath, filepath);
+  return filename;
+}
+
+function output(result) {
+  console.log(JSON.stringify(result));
+}
+
+function error(msg) {
+  output({ status: 'error', error: msg });
+  process.exit(1);
+}
+
+// Read input — either from stdin (JSON pipe) or from argv
+async function readInput() {
+  const args = process.argv.slice(2);
+
+  // Check if stdin has data (piped input)
+  if (!process.stdin.isTTY) {
+    const chunks = [];
+    for await (const chunk of process.stdin) chunks.push(chunk);
+    const raw = Buffer.concat(chunks).toString().trim();
+    if (raw) {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        error(`Invalid JSON input: ${raw.slice(0, 100)}`);
+      }
+    }
+  }
+
+  // Positional args fallback
+  if (args.length === 0) {
+    error('Usage: echo \'{"command":"send_message","text":"hello"}\' | wireclaw-ipc\n   or: wireclaw-ipc <command> [args...]');
+  }
+
+  const command = args[0];
+  switch (command) {
+    case 'send_message':
+      return { command, text: args.slice(1).join(' ') };
+    case 'system_health':
+      return { command };
+    case 'send_email':
+      // wireclaw-ipc send_email <to> <subject> <body>
+      return { command, to: args[1], subject: args[2], body: args.slice(3).join(' ') };
+    case 'schedule_task':
+      // wireclaw-ipc schedule_task <cron_or_interval> <prompt>
+      return { command, schedule_value: args[1], prompt: args.slice(2).join(' ') };
+    case 'list_commands':
+      output({
+        commands: [
+          { name: 'send_message', args: '{"text":"..."}', description: 'Send a message to the current chat/talk page' },
+          { name: 'reply_email', args: '{"to":"...","subject":"...","body":"..."}', description: 'Reply to the current email thread' },
+          { name: 'send_email', args: '{"to":"...","subject":"...","body":"..."}', description: 'Send a new email (main agent only)' },
+          { name: 'schedule_task', args: '{"prompt":"...","schedule_type":"cron","schedule_value":"0 9 * * *"}', description: 'Schedule a recurring task' },
+          { name: 'system_health', args: '{}', description: 'Request VPS health check (main agent only)' },
+          { name: 'create_agent', args: '{"handle":"..."}', description: 'Create a new agent from shared/manifests/ (main agent only)' },
+          { name: 'refresh_groups', args: '{}', description: 'Refresh group registrations (main agent only)' },
+        ],
+      });
+      process.exit(0);
+    default:
+      return { command, ...Object.fromEntries(args.slice(1).map((a, i) => [`arg${i}`, a])) };
+  }
+}
+
+async function main() {
+  const input = await readInput();
+  const { command, ...params } = input;
+
+  if (!command) error('Missing "command" field');
+
+  switch (command) {
+    case 'send_message': {
+      if (!params.text) error('Missing "text" field');
+      const file = writeIpcFile(MESSAGES_DIR, {
+        type: 'message',
+        chatJid: params.chatJid || chatJid,
+        text: params.text,
+      });
+      output({ status: 'ok', message: `Message queued (${file})` });
+      break;
+    }
+
+    case 'reply_email': {
+      if (!params.body && !params.text) error('Missing "body" or "text" field');
+      const body = params.body || params.text;
+      if (replyType !== 'email') {
+        // Not in email context — fall back to talk page message
+        const file = writeIpcFile(MESSAGES_DIR, {
+          type: 'message',
+          chatJid: params.chatJid || chatJid,
+          text: body,
+        });
+        output({ status: 'ok', message: `No email context, sent as talk page message (${file})` });
+      } else {
+        const file = writeIpcFile(MESSAGES_DIR, {
+          type: 'reply',
+          chatJid: params.chatJid || chatJid,
+          text: body,
+          replyType: 'email',
+          replyFrom: params.to || replyFrom,
+          replySubject: params.subject || replySubject,
+        });
+        output({ status: 'ok', message: `Email reply queued (${file})` });
+      }
+      break;
+    }
+
+    case 'send_email': {
+      if (!params.to || !params.body) error('Missing "to" or "body" field');
+      // AgentWire email sending goes through the MCP — for CLI, route as IPC reply
+      const file = writeIpcFile(MESSAGES_DIR, {
+        type: 'reply',
+        chatJid: params.chatJid || chatJid,
+        text: params.body,
+        replyType: 'email',
+        replyFrom: params.to,
+        replySubject: params.subject || '(no subject)',
+      });
+      output({ status: 'ok', message: `Email queued to ${params.to} (${file})` });
+      break;
+    }
+
+    case 'schedule_task': {
+      if (!params.prompt) error('Missing "prompt" field');
+      const file = writeIpcFile(TASKS_DIR, {
+        type: 'schedule_task',
+        prompt: params.prompt,
+        schedule_type: params.schedule_type || 'cron',
+        schedule_value: params.schedule_value || '0 9 * * *',
+        targetJid: params.targetJid || chatJid,
+        context_mode: params.context_mode || 'isolated',
+      });
+      output({ status: 'ok', message: `Task scheduled (${file})` });
+      break;
+    }
+
+    case 'system_health': {
+      if (!isMain) error('system_health is only available to the main agent');
+      const file = writeIpcFile(TASKS_DIR, {
+        type: 'system_health',
+        timestamp: new Date().toISOString(),
+      });
+      // Poll for result
+      const outputDir = path.join(IPC_DIR, 'output');
+      const startTime = Date.now();
+      while (Date.now() - startTime < 15000) {
+        if (fs.existsSync(outputDir)) {
+          const files = fs.readdirSync(outputDir).filter(f => f.startsWith('health-'));
+          if (files.length > 0) {
+            const latest = files.sort().pop();
+            const resultPath = path.join(outputDir, latest);
+            const result = JSON.parse(fs.readFileSync(resultPath, 'utf-8'));
+            fs.unlinkSync(resultPath);
+            output({ status: 'ok', result: result.result });
+            process.exit(0);
+          }
+        }
+        await new Promise(r => setTimeout(r, 500));
+      }
+      output({ status: 'timeout', message: 'Health check timed out after 15s' });
+      break;
+    }
+
+    case 'create_agent': {
+      if (!isMain) error('create_agent is only available to the main agent');
+      if (!params.handle) error('Missing "handle" field');
+      const file = writeIpcFile(TASKS_DIR, {
+        type: 'create_agent',
+        handle: params.handle,
+        timestamp: new Date().toISOString(),
+      });
+      output({ status: 'ok', message: `Agent creation requested for "${params.handle}" (${file})` });
+      break;
+    }
+
+    case 'refresh_groups': {
+      if (!isMain) error('refresh_groups is only available to the main agent');
+      const file = writeIpcFile(TASKS_DIR, {
+        type: 'refresh_groups',
+        timestamp: new Date().toISOString(),
+      });
+      output({ status: 'ok', message: `Group refresh requested (${file})` });
+      break;
+    }
+
+    default:
+      error(`Unknown command: ${command}. Run "wireclaw-ipc list_commands" to see available commands.`);
+  }
+}
+
+main().catch(err => error(err.message));
