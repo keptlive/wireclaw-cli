@@ -15,6 +15,8 @@ import {
 let db: Database.Database;
 
 function createSchema(database: Database.Database): void {
+  // Wrap schema creation in a transaction for atomicity
+  const migrate = database.transaction(() => {
   database.exec(`
     CREATE TABLE IF NOT EXISTS chats (
       jid TEXT PRIMARY KEY,
@@ -149,6 +151,13 @@ function createSchema(database: Database.Database): void {
     /* column already exists */
   }
 
+  // Add framework column (agent framework: claude-code, opencode, hermes)
+  try {
+    database.exec(`ALTER TABLE registered_groups ADD COLUMN framework TEXT DEFAULT 'claude-code'`);
+  } catch {
+    /* column already exists */
+  }
+
   // Add channel and is_group columns if they don't exist (migration for existing DBs)
   try {
     database.exec(`ALTER TABLE chats ADD COLUMN channel TEXT`);
@@ -169,6 +178,8 @@ function createSchema(database: Database.Database): void {
   } catch {
     /* columns already exist */
   }
+  }); // end transaction
+  migrate();
 }
 
 export function initDatabase(): void {
@@ -559,8 +570,8 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
     throw new Error(`Invalid group folder "${group.folder}" for JID ${jid}`);
   }
   db.prepare(
-    `INSERT OR REPLACE INTO registered_groups (jid, name, folder, trigger_pattern, added_at, container_config, requires_trigger, is_main, agentwire_agent_id, model, skills)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO registered_groups (jid, name, folder, trigger_pattern, added_at, container_config, requires_trigger, is_main, agentwire_agent_id, model, framework, skills)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     jid,
     group.name,
@@ -572,6 +583,7 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
     group.isMain ? 1 : 0,
     group.agentwireAgentId || null,
     group.model || null,
+    group.framework || 'claude-code',
     group.skills ? JSON.stringify(group.skills) : null,
   );
 }
@@ -588,6 +600,7 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
     is_main: number | null;
     agentwire_agent_id: string | null;
     model: string | null;
+    framework: string | null;
     skills: string | null;
   }>;
   const result: Record<string, RegisteredGroup> = {};
@@ -612,6 +625,7 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
       isMain: row.is_main === 1 ? true : undefined,
       agentwireAgentId: row.agentwire_agent_id || undefined,
       model: row.model || undefined,
+      framework: row.framework || 'claude-code',
       skills: row.skills ? JSON.parse(row.skills) : undefined,
     };
   }

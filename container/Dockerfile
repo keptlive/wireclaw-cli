@@ -64,9 +64,29 @@ RUN pip3 install --break-system-packages \
     markdown \
     striprtf
 
+# Install OpenCode CLI (open-source coding agent, supports multiple LLM providers)
+RUN curl -fsSL -o /tmp/opencode.tar.gz \
+    'https://github.com/anomalyco/opencode/releases/download/v1.3.10/opencode-linux-x64.tar.gz' \
+    && tar xzf /tmp/opencode.tar.gz -C /usr/local/bin/ opencode \
+    && chmod +x /usr/local/bin/opencode \
+    && rm /tmp/opencode.tar.gz
+
+# Install Hermes Agent (NousResearch self-improving agent, supports any LLM)
+# Hermes uses its own install script that handles Python/Node deps
+RUN curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | HOME=/home/node bash || true
+
 # Set Chromium path for agent-browser
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Add vault CLI for secret management
+COPY vault /usr/local/bin/vault
+RUN chmod +x /usr/local/bin/vault
+
+# Add wireclaw-ipc CLI bridge for non-MCP frameworks (Hermes, OpenCode, etc.)
+# Allows agents to send messages, emails, schedule tasks via IPC JSON files
+COPY wireclaw-ipc /usr/local/bin/wireclaw-ipc
+RUN chmod 755 /usr/local/bin/wireclaw-ipc
 
 # Install agent-browser and claude-code CLI globally
 # Claude Code CLI is the primary execution engine (replaces Agent SDK)
@@ -100,7 +120,10 @@ RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/
 RUN printf '#!/bin/bash\nset -e\n# Symlink .claude.json from inside .claude/ dir to home (CLI expects it next to .claude/)\nif [ -f /home/node/.claude/.claude.json ] && [ ! -f /home/node/.claude.json ]; then\n  ln -sf /home/node/.claude/.claude.json /home/node/.claude.json\nfi\ncd /app && npx tsc --outDir /tmp/dist 2>&1 >&2\nln -s /app/node_modules /tmp/dist/node_modules\nchmod -R a-w /tmp/dist\ncat > /tmp/input.json\nnode /tmp/dist/index.js < /tmp/input.json\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Set ownership to node user (non-root) for writable directories
-RUN chown -R node:node /workspace && chmod 777 /home/node
+# Create dirs needed by OpenCode (~/.local/share, ~/.config) and Hermes (~/.hermes)
+RUN mkdir -p /home/node/.local/share /home/node/.config /home/node/.cache /home/node/.hermes \
+    && chown -R node:node /workspace /home/node/.local /home/node/.config /home/node/.cache /home/node/.hermes \
+    && chmod 777 /home/node
 
 # Switch to non-root user (required for --dangerously-skip-permissions)
 USER node

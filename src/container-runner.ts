@@ -2,11 +2,12 @@
  * Container Runner for WireClaw
  * Spawns agent execution in containers and handles IPC
  */
-import { ChildProcess, exec, spawn } from 'child_process';
+import { ChildProcess, execFile, spawn } from 'child_process';
+import { randomBytes } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
-import { chownSync } from 'fs';
+import { lchownSync } from 'fs';
 
 import {
   CONTAINER_IMAGE,
@@ -24,7 +25,7 @@ import { logger } from './logger.js';
 import {
   CONTAINER_RUNTIME_BIN,
   readonlyMountArgs,
-  stopContainer,
+  stopContainerArgs,
 } from './container-runtime.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
@@ -41,6 +42,7 @@ export interface ContainerInput {
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
+  framework?: string; // 'claude-code' (default), 'opencode', 'hermes'
   secrets?: Record<string, string>;
   mcpServers?: Record<string, import('./types.js').McpServerConfig>;
   systemPackages?: string[];
@@ -71,13 +73,15 @@ function ensureContainerWritable(dirPath: string, recursive = false): void {
   const hostUid = process.getuid?.();
   if (hostUid === 0) {
     try {
-      chownSync(dirPath, CONTAINER_UID, CONTAINER_GID);
+      lchownSync(dirPath, CONTAINER_UID, CONTAINER_GID);
       if (recursive) {
         // Also fix permissions on all files inside (e.g. CLAUDE.md created by another user)
         for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+          // Skip symlinks entirely — agents could create symlinks to escalate
+          if (entry.isSymbolicLink()) continue;
           const fullPath = path.join(dirPath, entry.name);
           try {
-            chownSync(fullPath, CONTAINER_UID, CONTAINER_GID);
+            lchownSync(fullPath, CONTAINER_UID, CONTAINER_GID);
             if (entry.isDirectory()) {
               ensureContainerWritable(fullPath, true);
             }
@@ -122,7 +126,7 @@ function buildVolumeMounts(
     // Mounted separately from project root so main can write here without
     // gaining write access to source code.
     fs.mkdirSync(SHARED_DIR, { recursive: true });
-    ensureContainerWritable(SHARED_DIR);
+    ensureContainerWritable(SHARED_DIR, true);
     mounts.push({
       hostPath: SHARED_DIR,
       containerPath: '/workspace/shared',
@@ -295,6 +299,25 @@ function buildVolumeMounts(
     ensureContainerWritable(claudeJsonPath);
   }
 
+  // Per-group vault storage (encrypted secrets persist across invocations)
+  const groupVaultDir = path.join(groupDir, '.vault');
+  fs.mkdirSync(groupVaultDir, { recursive: true, mode: 0o700 });
+  ensureContainerWritable(groupVaultDir, true);
+
+  // Generate vault master key per group if not exists
+  const vaultKeyPath = path.join(groupVaultDir, 'master.key');
+  if (!fs.existsSync(vaultKeyPath)) {
+    const key = randomBytes(32).toString('hex');
+    fs.writeFileSync(vaultKeyPath, key, { mode: 0o600 });
+    ensureContainerWritable(vaultKeyPath);
+  }
+
+  mounts.push({
+    hostPath: groupVaultDir,
+    containerPath: '/home/node/.vault',
+    readonly: false,
+  });
+
   // Per-group IPC namespace: each group gets its own IPC directory
   // This prevents cross-group privilege escalation via IPC
   const groupIpcDir = resolveGroupIpcPath(group.folder);
@@ -352,9 +375,11 @@ function buildVolumeMounts(
 // Env vars always passed to containers regardless of scoping.
 // Note: CLI-based auth reads ~/.claude/.credentials.json directly (mounted at /home/node/.claude),
 // so CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY are optional — only needed if using API key auth.
+// IMPORTANT: ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL are NOT in this list because
+// per-group .env files set these for non-Claude model agents (e.g. GLM, Qwen via OpenRouter).
+// Global secrets override per-group .env, so including them here would break per-group API routing.
+// Groups that need these from global .env should declare them in their manifest's env_vars.
 const ALWAYS_REQUIRED_ENV_VARS = [
-  'ANTHROPIC_API_KEY',         // Optional: Console API key (if not using OAuth)
-  'ANTHROPIC_BASE_URL',        // Optional: custom API endpoint
   'CLAUDE_MODEL',              // Model override
   'AGENTWIRE_API_KEY',         // AgentWire MCP auth
   'AGENTWIRE_URL',             // AgentWire URL
@@ -475,11 +500,16 @@ export async function runContainerAgent(
     // Pass secrets via stdin (never written to disk or mounted as files)
     input.secrets = readSecrets(group);
 
+    // Pass vault master key for encrypted secret storage
+    const vaultKeyPath = path.join(groupDir, '.vault', 'master.key');
+    if (fs.existsSync(vaultKeyPath)) {
+      input.secrets.VAULT_MASTER_KEY = fs.readFileSync(vaultKeyPath, 'utf8').trim();
+    }
+
     // Pass custom MCP servers and system packages from container config
     if (group.containerConfig?.mcpServers) {
       input.mcpServers = group.containerConfig.mcpServers;
     }
-
 
     container.stdin.write(JSON.stringify(input));
     container.stdin.end();
@@ -578,7 +608,7 @@ export async function runContainerAgent(
         { group: group.name, containerName },
         'Container timeout, stopping gracefully',
       );
-      exec(stopContainer(containerName), { timeout: 15000 }, (err) => {
+      execFile(CONTAINER_RUNTIME_BIN, stopContainerArgs(containerName), { timeout: 15000 }, (err) => {
         if (err) {
           logger.warn(
             { group: group.name, containerName, err },

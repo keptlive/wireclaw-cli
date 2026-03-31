@@ -446,6 +446,52 @@ Handle rules: lowercase alphanumeric, hyphens, underscores. Regex: ^[a-z0-9][a-z
 );
 
 server.tool(
+  'system_health',
+  `Run a VPS health check. Returns disk usage, memory, uptime, Docker containers, systemd service status, and top processes. Main group only. Results are returned asynchronously — check /workspace/ipc/output/ for the health-*.json file after a few seconds.`,
+  {},
+  async () => {
+    if (!isMain) {
+      return {
+        content: [{ type: 'text' as const, text: 'Only the main group can run system health checks.' }],
+        isError: true,
+      };
+    }
+
+    writeIpcFile(TASKS_DIR, {
+      type: 'system_health',
+      timestamp: new Date().toISOString(),
+    });
+
+    // Poll for output file (host writes to /workspace/ipc/output/)
+    const outputDir = '/workspace/ipc/output';
+    const startTime = Date.now();
+    const timeout = 15000;
+
+    while (Date.now() - startTime < timeout) {
+      if (fs.existsSync(outputDir)) {
+        const files = fs.readdirSync(outputDir).filter(f => f.startsWith('health-'));
+        if (files.length > 0) {
+          // Read and delete the newest result
+          const latest = files.sort().pop()!;
+          const resultPath = path.join(outputDir, latest);
+          const result = JSON.parse(fs.readFileSync(resultPath, 'utf-8'));
+          fs.unlinkSync(resultPath);
+          return {
+            content: [{ type: 'text' as const, text: result.result }],
+          };
+        }
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+
+    return {
+      content: [{ type: 'text' as const, text: 'Health check timed out. The host may be busy — try again shortly.' }],
+      isError: true,
+    };
+  },
+);
+
+server.tool(
   'deploy_skill',
   `Deploy a skill to the host's container/skills/ directory so all agents can use it. Main group only.
 

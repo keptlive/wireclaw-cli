@@ -43,3 +43,11 @@ groups/research/*
 .wireclaw/
 
 agents-sdk-docs
+
+# Credentials files
+.env.credentials
+*.credentials
+credentials/
+
+# Container runtime artifacts
+container/vault

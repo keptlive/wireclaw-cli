@@ -43,6 +43,7 @@ const GroupManifestSchema = z.object({
     .object({
       system_prompt: z.string().optional(),
       model: z.string().optional(),
+      framework: z.enum(['claude-code', 'opencode', 'hermes']).default('claude-code').optional(),
     })
     .optional(),
   channel_binding: z
@@ -215,6 +216,7 @@ export function manifestToRegisteredGroup(
     isMain,
     agentwireAgentId: opts.agentwireAgentId,
     model: manifest.context?.model,
+    framework: manifest.context?.framework || 'claude-code',
     skills: manifest.skills,
   };
 
